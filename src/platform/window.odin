@@ -1,7 +1,7 @@
 package platform
 
 import "vendor:x11/xlib"
-import "../../vendor/x11/xutil"
+import "../../lib/x11/xutil"
 import "core:fmt"
 import "core:slice"
 import "base:runtime"
@@ -12,10 +12,6 @@ Window :: struct {
     screen: i32,
 }
 
-// WARN: It is quite unfortunate that we can't really get associated user data
-// through the display. Maybe only through the XErrorEvent, but then there lies
-// a problem that We can't make any calls to Xlib inside an error handler.
-// Atleast that's what the documentation says.
 @private
 error_handler :: proc "c" (
     display: ^xlib.Display,
