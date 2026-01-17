@@ -4,8 +4,10 @@ import "core:math/linalg"
 import "vendor:x11/xlib"
 import "core:slice"
 
+import "../platform/window"
+
 Renderer :: struct {
-    image: ^xlib.XImage,
+    image: window.WindowImage,
 }
 
 Vertex :: struct {
@@ -23,23 +25,20 @@ Object :: struct {
     topology_type: Topology_Type 
 }
 
+// TODO: Do not directly access the x_image struct
 fill_screen :: proc(renderer: ^Renderer) {
-    for y in 0..<renderer.image.height {
-        for x in 0..<renderer.image.width {
+    for y in 0..<renderer.image.x_image.height {
 
-            // TODO: There has to be a better way to do this...
-            pixel: [8]u8 = {
+        y_offset := y * renderer.image.x_image.width
+        for x in 0..<renderer.image.x_image.width {
+            pixel: [4]u8 = {
                 u8(x % 256), // B
                 u8(y % 256), // G
                 128,         // R
                 255,         // A
-                0,
-                0,
-                0,
-                0,
             }
 
-            xlib.PutPixel(renderer.image, x, y, transmute(uint)pixel)
+            renderer.image.buffer[y_offset + x] = transmute(u32)pixel
         }
     }
 

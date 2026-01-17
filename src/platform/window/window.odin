@@ -19,10 +19,16 @@ WindowAttributes :: struct {
     depth: i32
 }
 
+WindowImage :: struct {
+    x_image: ^xlib.XImage,
+    buffer: []u32,
+}
+
 Window :: struct {
     display: ^xlib.Display,
+    visual: ^xlib.Visual,
     window: xlib.Window, // Windows act as Drawables!
-    color_buffer: ^xlib.XImage,
+    image: WindowImage,
     screen: i32,
     gc: xlib.GC,
 }
@@ -77,36 +83,30 @@ destroy:: #force_inline proc(win: ^Window) {
     xlib.UnmapWindow(win.display, win.window)
     xlib.DestroyWindow(win.display, win.window)
     xlib.CloseDisplay(win.display)
-
-    free(win)
 }
 
 // TODO: Have to make sure that width and height are somehow synchronized.
-// Taking an image's width and height isn't probably a good idea.
-// And this is probably not a good solution. Probably slow?
+// Taking an image's width and height isn't probably a good idea?
 clear :: #force_inline proc(win: ^Window) {
-
-    for y in 0..<win.color_buffer.height {
-
-        for x in 0..<win.color_buffer.width {
-            xlib.PutPixel(win.color_buffer, x, y, 0);
-        }
+    for i in 0..<len(win.image.buffer) {
+        win.image.buffer[i] = 0
     }
-    
 }
 
 
-create_rgb_image :: proc(win: ^Window, width, height: u32) -> ^xlib.XImage {
+create_rgb_image :: proc(win: ^Window, width, height: u32) -> WindowImage {
     depth := xlib.DefaultDepth(win.display, win.screen);
-    visual := xlib.DefaultVisual(win.display, win.screen)
 
     assert(depth >= 0)
 
     img_data := libc.malloc(c.size_t(width * height * 4))
-    img := xlib.CreateImage(win.display, visual, u32(depth), .ZPixmap,
+    img_buffer := slice.from_ptr(transmute(^u32)img_data,
+        int(width * height))
+
+    img := xlib.CreateImage(win.display, win.visual, u32(depth), .ZPixmap,
         0, img_data, width, height, 32, 0)
 
-    return img
+    return WindowImage{ x_image = img, buffer = img_buffer }
 }
 
 present :: #force_inline proc(win: ^Window) {
@@ -114,19 +114,19 @@ present :: #force_inline proc(win: ^Window) {
         win.display,
         win.window,
         win.gc,
-        win.color_buffer,
+        win.image.x_image,
         0, 0, 0, 0,
-        u32(win.color_buffer.width),
-        u32(win.color_buffer.height),
+        u32(win.image.x_image.width),
+        u32(win.image.x_image.height),
     )
 }
 
 resize:: proc(win: ^Window, width, height: u32) {
-    xlib.DestroyImage(win.color_buffer)
-    win.color_buffer = create_rgb_image(win, width, height)
+    xlib.DestroyImage(win.image.x_image)
+    win.image = create_rgb_image(win, width, height)
 }
 
-create:: proc(win_params: WindowCreateParams) -> (Window, bool) {
+create :: proc(win_params: WindowCreateParams) -> (Window, bool) {
 
     display := xlib.OpenDisplay(nil)
     if display == nil {
@@ -134,23 +134,33 @@ create:: proc(win_params: WindowCreateParams) -> (Window, bool) {
             screen = 0,
             display = nil,
             window = 0,
-            color_buffer = nil,
+            image = WindowImage{ nil, nil },
         }, false
     }
 
     xlib.SetErrorHandler(error_handler)
 
+    root := xlib.DefaultRootWindow(display)
     screen := xlib.DefaultScreen(display)
-    window := xlib.CreateSimpleWindow(
-        display,
-        xlib.RootWindow(display, screen),
-        0, 0, win_params.width, win_params.height, 1,
-        0x000000,
-        0xFF0000,
-    )
-
-    depth := xlib.DefaultDepth(display, screen);
     visual := xlib.DefaultVisual(display, screen)
+    depth := xlib.DefaultDepth(display, screen);
+
+    window_attr: xlib.XSetWindowAttributes 
+    window_attr.bit_gravity = .StaticGravity
+    window_attr.background_pixel = 0
+    window_attr.colormap = xlib.CreateColormap(display, root, visual,
+         .AllocNone)
+    // NOTE: ResizeRedirect is not appropriate for getting resized window
+    // notification. That's for events when XResizeWindow(), XMoveResizeWindow()
+    // or XConfigureWindow() is called. For resizing by a window manager,
+    // .StructureNotify has to be set.
+    window_attr.event_mask = { .StructureNotify } 
+
+    window := xlib.CreateWindow(display, root, 0, 0, u32(win_params.width),
+        u32(win_params.height), 0, depth, .InputOutput, visual,
+        {.CWBitGravity , .CWBackPixel , .CWColormap , .CWEventMask },
+        &window_attr)
+
     gc := xlib.DefaultGC(display, screen)
 
     assert(depth >= 0)
@@ -162,8 +172,10 @@ create:: proc(win_params: WindowCreateParams) -> (Window, bool) {
     // In that case it will crash while destroying the image.
     img_data := libc.malloc(c.size_t(win_params.width * win_params.height * 4))
     assert(img_data != nil, "Failed to allocate a Color buffer!")
+    img_buffer := slice.from_ptr(transmute(^u32)img_data,
+        int(win_params.width * win_params.height))
     
-    color_buffer := xlib.CreateImage(display, visual, u32(depth), .ZPixmap,
+    image := xlib.CreateImage(display, visual, u32(depth), .ZPixmap,
         0, img_data, win_params.width, win_params.height, 32, 0)
 
     // NOTE: When setting class hints, are strings getting copied?
@@ -179,7 +191,8 @@ create:: proc(win_params: WindowCreateParams) -> (Window, bool) {
         display = display,
         window = window,
         screen = screen,
-        color_buffer = color_buffer,
+        visual = visual,
+        image = WindowImage{ image, img_buffer},
         gc = gc,
     }, true
 }
