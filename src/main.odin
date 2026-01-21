@@ -56,8 +56,7 @@ main :: proc() {
             }
         }
 
-        window.clear(&win)
-        renderer.fill_screen(&render_ctx)
+        renderer.draw(&render_ctx)
         window.present(&win)
 
         sleep_time := SYNC_DURATION - time.tick_diff(start_tick, time.tick_now()) 
