@@ -5,13 +5,13 @@ A software renderer made in Odinlang and with X11.
 
 ## TODOs
 ---
-[x] Make the window work.
-[x] Make an off-window pixel buffer.
-[x] Render a simple Triangle.
-[ ] Do a rendering pipeline.
-    [ ] Setup a scene.
-    [ ] Setup Transformation pipeline.
-    [ ] Setup a drawing phase.
+- [x] Make the window work.
+- [x] Make an off-window pixel buffer.
+- [x] Render a simple Triangle.
+- [ ] Do a rendering pipeline.
+-   [ ] Setup a scene.
+-   [ ] Setup Transformation pipeline.
+-   [ ] Setup a drawing phase.
 
 ## Optimization
 
