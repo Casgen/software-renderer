@@ -56,6 +56,7 @@ main :: proc() {
             }
         }
 
+        window.clear(&win)
         renderer.draw(&render_ctx)
         window.present(&win)
 
@@ -64,7 +65,7 @@ main :: proc() {
             time.sleep(sleep_time)
         }
         delta_time = time.tick_diff(start_tick, time.tick_now()) 
-        fmt.printfln("Delta Time: %v", delta_time)
+        render_ctx.acc_time += f32(delta_time) / 1_000_000_000
     }
 
     window.destroy(&win)

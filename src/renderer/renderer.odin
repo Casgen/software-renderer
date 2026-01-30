@@ -3,23 +3,25 @@ package renderer
 import "core:math/linalg"
 import "vendor:x11/xlib"
 import "core:slice"
-import "core:math/fixed"
+import "core:math"
 
 import "../platform/window"
+import "../zmath/color"
 import "../zmath"
 
 Renderer :: struct {
     image: window.WindowImage,
+    acc_time: f32,
 }
 
 Vertex3D :: struct {
     position: linalg.Vector3f32,
-    color: [4]u8,
+    color: color.Color4xF32,
 }
 
 Vertex2D :: struct {
     position: linalg.Vector2f32,
-    color: [4]u8,
+    color: color.Color4xF32,
 }
 
 Topology_Type :: enum {
@@ -33,29 +35,11 @@ Object :: struct {
 }
 
 // TODO: Do not directly access the x_image struct
-fill_screen :: proc(renderer: ^Renderer) {
-    for y in 0..<renderer.image.x_image.height {
-
-        y_offset := y * renderer.image.x_image.width
-        for x in 0..<renderer.image.x_image.width {
-            pixel: [4]u8 = {
-                u8(x % 256), // B
-                u8(y % 256), // G
-                128,         // R
-                255,         // A
-            }
-
-            renderer.image.buffer[y_offset + x] = transmute(u32)pixel
-        }
-    }
-
-}
-
 draw :: proc(renderer: ^Renderer) {
 
-    a := Vertex2D{position = {0.0, -0.5}, color = {255, 0, 0, 0}}
-    b := Vertex2D{position = {0.5, 0.0}, color = {0, 255, 0, 0}} 
-    c := Vertex2D{position = {0.0,  0.5}, color = {0, 0, 255, 0}} 
+    a := Vertex2D{position = {0.0, -0.5}, color = {1.0, 0, 0, 0}}
+    b := Vertex2D{position = {-0.5, 0.0}, color = {0, 1.0, 0, 0}} 
+    c := Vertex2D{position = {0.0,  0.5}, color = {0, 0, 1.0, 0}} 
 
     // Sort vertices from top to bottom
     if (c.position.y < b.position.y) {
@@ -98,6 +82,11 @@ draw :: proc(renderer: ^Renderer) {
     k_ac := (trans_a.x - trans_c.x) / (trans_c.y - trans_a.y) // For Line A-C
     k_bc := (trans_c.x - trans_b.x) / (trans_c.y - trans_b.y) // For Line B-C
 
+    // Calculate length of sides of a triangle
+    ab_length := linalg.vector_length(trans_a.xy - trans_b.xy) 
+    bc_length := linalg.vector_length(trans_b.xy - trans_c.xy) 
+    ac_length := linalg.vector_length(trans_a.xy - trans_c.xy) 
+
     x_min_step, x_max_step: f32
     if is_cw_winding {
         x_min_step = k_ac
@@ -113,34 +102,54 @@ draw :: proc(renderer: ^Renderer) {
 
     for y := u32(trans_a.y); y < u32(trans_b.y); y += 1 {
 
-        acc_min_x += x_min_step
-        acc_max_x += x_max_step
+        diff := (f32(y) - trans_a.y) 
+        t_ab := diff / (trans_b.y - trans_a.y) // T between A-B
+        t_ac := diff / (trans_c.y - trans_a.y) // T between A-C
+
+        acc_min_x += math.round(x_min_step)
+        acc_max_x += math.round(x_max_step)
+
+        color_ab := zmath.lerp_4xf32(a.color, b.color, t_ab)
+        color_ac := zmath.lerp_4xf32(a.color, c.color, t_ac)
         
         row := y * u32(renderer.image.x_image.width)
 
         // TODO: Probably could be SIMDed
         for x := u32(acc_min_x); x < u32(acc_max_x); x += 1 {
-            renderer.image.buffer[row + x] = 0x00FF00
+            t := (f32(x) - acc_min_x) / (acc_max_x - acc_min_x)
+            color_abc := zmath.lerp_4xf32(color_ab, color_ac, t)
+            result_pixel := color.to_u32(color_abc)
+            renderer.image.buffer[row + x] = result_pixel
         }
     }
 
     if is_cw_winding {
         x_max_step = k_bc
     } else {
-        x_max_step = k_ac
+        x_min_step = k_bc
     }
 
 
     // Render the bottom half of the triangle
     for y := u32(trans_b.y); y < u32(trans_c.y); y += 1 {
-        acc_min_x += x_min_step
-        acc_max_x += x_max_step
+        t_bc := (f32(y) - trans_b.y) / (trans_c.y - trans_b.y) // T between B-C
+        t_ac := (f32(y) - trans_a.y) / (trans_c.y - trans_a.y) // T between A-C
+
+        acc_min_x += math.round(x_min_step)
+        acc_max_x += math.round(x_max_step)
+
+        color_bc := zmath.lerp_4xf32(b.color, c.color, t_bc)
+        color_ac := zmath.lerp_4xf32(a.color, c.color, t_ac)
 
         row := y * u32(renderer.image.x_image.width)
 
         // TODO: Probably could be SIMDed
         for x := u32(acc_min_x); x < u32(acc_max_x); x += 1 {
-            renderer.image.buffer[row + x] = 0x00FF00
+
+            t := (f32(x) - acc_min_x) / (acc_max_x - acc_min_x)
+            color_abc := zmath.lerp_4xf32(color_bc, color_ac, t)
+            result_pixel := color.to_u32(color_abc)
+            renderer.image.buffer[row + x] = result_pixel
         }
     }
 }
