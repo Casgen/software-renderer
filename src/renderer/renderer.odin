@@ -4,6 +4,7 @@ import "core:math/linalg"
 import "vendor:x11/xlib"
 import "core:slice"
 import "core:math"
+import "core:fmt"
 
 import "../platform/window"
 import "../zmath/color"
@@ -60,6 +61,7 @@ draw :: proc(renderer: ^Renderer) {
         b = temp
     }
                 
+    // Transform vertices to project them onto the screen
     width: f32 = f32(renderer.image.x_image.width)
     height: f32 = f32(renderer.image.x_image.height)
 
@@ -77,30 +79,37 @@ draw :: proc(renderer: ^Renderer) {
     bc_vec := b.position - c.position
     is_cw_winding := -ac_vec.x * bc_vec.y + bc_vec.x * ac_vec.y < 0
 
-    // Line coefficients (size of a step per pixel).
+    // Line coefficients. Size of a step per 1 pixel down in the direction of Y
     k_ab := (trans_b.x - trans_a.x) / (trans_b.y - trans_a.y) // For Line A-B
     k_ac := (trans_a.x - trans_c.x) / (trans_c.y - trans_a.y) // For Line A-C
     k_bc := (trans_c.x - trans_b.x) / (trans_c.y - trans_b.y) // For Line B-C
 
-    // Calculate length of sides of a triangle
-    ab_length := linalg.vector_length(trans_a.xy - trans_b.xy) 
-    bc_length := linalg.vector_length(trans_b.xy - trans_c.xy) 
-    ac_length := linalg.vector_length(trans_a.xy - trans_c.xy) 
-
+    // Represent one incremental step in X when looping through each scan line.
     x_min_step, x_max_step: f32
+
+    inverted_t: f32
     if is_cw_winding {
         x_min_step = k_ac
         x_max_step = k_ab
+        inverted_t := 1
     } else {
         x_min_step = k_ab
         x_max_step = k_ac
+        inverted_t := 0
     }
 
     // Render first top half of the triangle
+    // Accumulative X coordinates to fill the triangle line by line.
+    // Accumulates by each step. More accurate and faster due to only addition.
     acc_min_x := trans_a.x
     acc_max_x := trans_a.x
 
-    for y := u32(trans_a.y); y < u32(trans_b.y); y += 1 {
+    // Cutoff the coordinates to fit within the framebuffer.
+    // Would do access out of bounds!
+    y_min := u32(math.max(trans_a.y, 0))
+    y_max := u32(math.min(trans_b.y, height - 1))
+
+    for y := y_min; y < y_max; y += 1 {
 
         diff := (f32(y) - trans_a.y) 
         t_ab := diff / (trans_b.y - trans_a.y) // T between A-B
@@ -111,12 +120,17 @@ draw :: proc(renderer: ^Renderer) {
 
         color_ab := zmath.lerp_4xf32(a.color, b.color, t_ab)
         color_ac := zmath.lerp_4xf32(a.color, c.color, t_ac)
+
+        if (y == y_max - 1) {
+            fmt.printfln("t_ab: %.5f, t_ac: %.5f", t_ab, t_ac)
+        }
         
         row := y * u32(renderer.image.x_image.width)
 
         // TODO: Probably could be SIMDed
         for x := u32(acc_min_x); x < u32(acc_max_x); x += 1 {
-            t := (f32(x) - acc_min_x) / (acc_max_x - acc_min_x)
+            // NOTE: See docs why t is calculated this way
+            t := math.abs(inverted_t - ((f32(x) - acc_min_x) / (acc_max_x - acc_min_x)))
             color_abc := zmath.lerp_4xf32(color_ab, color_ac, t)
             result_pixel := color.to_u32(color_abc)
             renderer.image.buffer[row + x] = result_pixel
@@ -128,10 +142,12 @@ draw :: proc(renderer: ^Renderer) {
     } else {
         x_min_step = k_bc
     }
-
-
+    
     // Render the bottom half of the triangle
     for y := u32(trans_b.y); y < u32(trans_c.y); y += 1 {
+        
+        diff := (f32(y) - trans_a.y)
+
         t_bc := (f32(y) - trans_b.y) / (trans_c.y - trans_b.y) // T between B-C
         t_ac := (f32(y) - trans_a.y) / (trans_c.y - trans_a.y) // T between A-C
 
@@ -145,8 +161,7 @@ draw :: proc(renderer: ^Renderer) {
 
         // TODO: Probably could be SIMDed
         for x := u32(acc_min_x); x < u32(acc_max_x); x += 1 {
-
-            t := (f32(x) - acc_min_x) / (acc_max_x - acc_min_x)
+            t := math.abs(inverted_t - ((f32(x) - acc_min_x) / (acc_max_x - acc_min_x)))
             color_abc := zmath.lerp_4xf32(color_bc, color_ac, t)
             result_pixel := color.to_u32(color_abc)
             renderer.image.buffer[row + x] = result_pixel
