@@ -1,0 +1,7 @@
+package constants
+
+KiloByte :: 1024
+MegaByte :: 1024 * 1024
+GigaByte :: 1024 * 1024 * 1024
+
+HALF_PI :: 3.14159265358979323846264338327950288 / 2.0

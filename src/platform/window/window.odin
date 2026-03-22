@@ -8,6 +8,10 @@ import "core:mem"
 import "core:strings"
 import "core:c/libc"
 import "core:c"
+import "core:simd"
+
+
+import "../input"
 
 WindowCreateParams :: struct {
     width, height: u32,
@@ -29,6 +33,7 @@ Window :: struct {
     visual: ^xlib.Visual,
     window: xlib.Window, // Windows act as Drawables!
     image: WindowImage,
+    depth_buffer: []f32,
     screen: i32,
     gc: xlib.GC,
 }
@@ -52,15 +57,72 @@ error_handler :: proc "c" (
     return 0
 }
 
-poll_event :: #force_inline proc(window: ^Window) -> (xlib.XEvent, bool) {
-    event: xlib.XEvent
+poll_event :: #force_inline proc(
+    window: ^Window,
+    out_event: ^Event
+) -> bool {
+    assert(out_event != nil, "Out parameter shouldn't be nil!")
+
+    out_event^ = Null{}
     is_pending := xlib.Pending(window.display) > 0
 
-    if is_pending {
-        xlib.NextEvent(window.display, &event)
+    if !is_pending do return false
+
+    x_event: xlib.XEvent
+    xlib.NextEvent(window.display, &x_event)
+
+    #partial switch x_event.type {
+    case .DestroyNotify:
+        out_event^ = Destroy_Window{}
+    case .ResizeRequest:
+        resize(window, u32(x_event.xresizerequest.width),
+            u32(x_event.xresizerequest.height))
+        out_event^ = Resize_Window{
+            image = window.image,
+            depth_buffer = window.depth_buffer,
+            width = u32(x_event.xresizerequest.width),
+            height = u32(x_event.xresizerequest.height)
+        }
+    case .ConfigureNotify:
+        resize(window, u32(x_event.xconfigure.width),
+            u32(x_event.xconfigure.height))
+        out_event^ = Resize_Window{
+            image = window.image,
+            depth_buffer = window.depth_buffer,
+            width = u32(x_event.xconfigure.width),
+            height = u32(x_event.xconfigure.height)
+        }
+    case .ButtonRelease:
+        out_event^ = MouseBtn_Released{
+            x = x_event.xbutton.x,
+            y = x_event.xbutton.y,
+            button = cast(input.MouseBtn_Code)x_event.xbutton.button
+        }
+    case .ButtonPress:
+        out_event^ = MouseBtn_Pressed{
+            x = x_event.xbutton.x,
+            y = x_event.xbutton.y,
+            button = cast(input.MouseBtn_Code)x_event.xbutton.button
+        }
+    case .KeyRelease:
+        out_event^ = Key_Released{
+            x = x_event.xkey.x,
+            y = x_event.xkey.y,
+            keycode = cast(input.Key_Code)x_event.xkey.keycode,
+        }
+    case .KeyPress:
+        out_event^ = Key_Pressed{
+            x = x_event.xkey.x,
+            y = x_event.xkey.y,
+            keycode = cast(input.Key_Code)x_event.xkey.keycode,
+        }
+    case .MotionNotify:
+        out_event^ = Pointer_Moved{
+            pos = {x_event.xmotion.x, x_event.xmotion.y},
+        }
     }
 
-    return event, is_pending
+    return true
 }
 
 next_event :: proc(window: ^Window) -> xlib.XEvent {
@@ -80,6 +142,8 @@ hide:: #force_inline proc(win: ^Window) {
 }
 
 destroy:: #force_inline proc(win: ^Window) {
+    delete(win.depth_buffer)
+    xlib.DestroyImage(win.image.x_image)
     xlib.UnmapWindow(win.display, win.window)
     xlib.DestroyWindow(win.display, win.window)
     xlib.CloseDisplay(win.display)
@@ -87,10 +151,9 @@ destroy:: #force_inline proc(win: ^Window) {
 
 // TODO: Have to make sure that width and height are somehow synchronized.
 // Taking an image's width and height isn't probably a good idea?
-clear :: #force_inline proc(win: ^Window) {
-    for i in 0..<len(win.image.buffer) {
-        win.image.buffer[i] = 0
-    }
+clear :: #force_inline proc(win: ^Window, clear_color: u32 = 0) {
+    for i in 0..<len(win.image.buffer) do win.image.buffer[i] = clear_color
+    for i in 0..<len(win.depth_buffer) do win.depth_buffer[i] = 1.0
 }
 
 
@@ -124,10 +187,14 @@ present :: #force_inline proc(win: ^Window) {
 resize:: proc(win: ^Window, width, height: u32) {
     xlib.DestroyImage(win.image.x_image)
     win.image = create_rgb_image(win, width, height)
+
+    delete(win.depth_buffer)
+    pixel_count := width * height
+    win.depth_buffer = make([]f32, pixel_count)
+    for i in 0..<pixel_count do win.depth_buffer[i] = 1.0
 }
 
 create :: proc(win_params: WindowCreateParams) -> (Window, bool) {
-
     display := xlib.OpenDisplay(nil)
     if display == nil {
         return Window{
@@ -148,6 +215,7 @@ create :: proc(win_params: WindowCreateParams) -> (Window, bool) {
     window_attr: xlib.XSetWindowAttributes 
     window_attr.bit_gravity = .StaticGravity
     window_attr.background_pixel = 0
+    window_attr.backing_pixel = 0
     window_attr.colormap = xlib.CreateColormap(display, root, visual,
          .AllocNone)
     // NOTE: ResizeRedirect is not appropriate for getting resized window
@@ -170,13 +238,17 @@ create :: proc(win_params: WindowCreateParams) -> (Window, bool) {
     // expects that it uses C's malloc. Why can't we do it with mem.alloc()?
     // Don't know really. Probably it's because it doesn't use C's malloc().
     // In that case it will crash while destroying the image.
-    img_data := libc.malloc(c.size_t(win_params.width * win_params.height * 4))
+    pixel_count := win_params.width * win_params.height
+    img_data := libc.malloc(c.size_t(pixel_count * 4))
     assert(img_data != nil, "Failed to allocate a Color buffer!")
     img_buffer := slice.from_ptr(transmute(^u32)img_data,
-        int(win_params.width * win_params.height))
+        int(pixel_count))
     
     image := xlib.CreateImage(display, visual, u32(depth), .ZPixmap,
         0, img_data, win_params.width, win_params.height, 32, 0)
+
+    depth_buffer := make([]f32, pixel_count)
+    for i in 0..<pixel_count do depth_buffer[i] = 1.0
 
     // NOTE: When setting class hints, are strings getting copied?
     if win_params.app_name != "" || win_params.class_name != "" {
@@ -192,7 +264,8 @@ create :: proc(win_params: WindowCreateParams) -> (Window, bool) {
         window = window,
         screen = screen,
         visual = visual,
-        image = WindowImage{ image, img_buffer},
+        image = WindowImage{image, img_buffer},
+        depth_buffer = depth_buffer,
         gc = gc,
     }, true
 }

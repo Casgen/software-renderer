@@ -12,11 +12,13 @@ import "core:bytes"
 
 import "platform/window"
 import "renderer"
+import "profiler"
+import "model"
+import "zmath/color"
 
 SYNC_DURATION : time.Duration : time.Duration(16_666_666)
 
 main :: proc() {
-
     win, ok := window.create({1024, 768, "Software Renderer App",
         "SoftwareRendererClass"})
     assert(ok, "Failed to create a window!")
@@ -25,6 +27,11 @@ main :: proc() {
         .Exposure,
         .KeyPress,
         .StructureNotify,
+        .KeyPress,
+        .KeyRelease,
+        .ButtonPress,
+        .ButtonRelease,
+        .PointerMotion,
     })
 
     window.show(&win)
@@ -34,37 +41,60 @@ main :: proc() {
 
     window_attrs := window.get_attributes(&win)
 
-    render_ctx: renderer.Renderer
-    render_ctx.image = win.image
-
+    render_ctx := renderer.create_renderer(win.image, win.depth_buffer)
+    triangles := renderer.generate_random_3d_triangles(2)
     main_loop: for {
         start_tick := time.tick_now()
 
-        for event, is_pending := window.poll_event(&win); is_pending;
-            event, is_pending = window.poll_event(&win) {
-            #partial switch event.type {
-            case .DestroyNotify:
-                break main_loop
-            case .ResizeRequest:
-                window.resize(&win, u32(event.xresizerequest.width),
-                    u32(event.xresizerequest.height))
-                render_ctx.image = win.image
-            case .ConfigureNotify:
-                window.resize(&win, u32(event.xconfigure.width),
-                    u32(event.xconfigure.height))
-                render_ctx.image = win.image
-            }
+        event: window.Event
+        for window.poll_event(&win, &event) {
+            renderer.dispatch_event(&render_ctx, event)
         }
 
-        window.clear(&win)
-        renderer.draw(&render_ctx)
+        renderer.renderer_update(&render_ctx, delta_time);
+
+        window.clear(&win, 0)
+        renderer.draw_3d(&render_ctx, triangles)
+
+        renderer.draw_line_3d(&render_ctx, {
+            model.Line3D{
+                a = model.Point4D{
+                    position = {0, 0, 0, 1},
+                },
+                b = model.Point4D{
+                    position = {0.5, 0, 0, 1},
+                },
+                color = color.Color4xU8{255, 0, 0, 0}
+            },
+            model.Line3D{
+                a = model.Point4D{
+                    position = {0, 0, 0, 1},
+                },
+                b = model.Point4D{
+                    position = {0, 0.5, 0, 1},
+                },
+                color = color.Color4xU8{0, 255, 0, 0}
+            },
+            model.Line3D{
+                a = model.Point4D{
+                    position = {0, 0, 0, 1},
+                },
+                b = model.Point4D{
+                    position = {0, 0, 0.5, 1},
+                },
+                color = color.Color4xU8{0, 0, 255, 0}
+            }
+        })
+        
         window.present(&win)
 
         sleep_time := SYNC_DURATION - time.tick_diff(start_tick, time.tick_now()) 
         if sleep_time >= 0 {
             time.sleep(sleep_time)
         }
+        window.draw_string(&win,"Something", 10, 10)
         delta_time = time.tick_diff(start_tick, time.tick_now()) 
+        // fmt.printfln("Frame Time: %.5f", delta_time)
         render_ctx.acc_time += f32(delta_time) / 1_000_000_000
     }
 
