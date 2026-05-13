@@ -363,7 +363,8 @@ draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
         b := &tri.b
         c := &tri.c
 
-        // Sort vertices from top to bottom
+        // Sort vertices from bottom to top C-B-A (After the Y-flipping, the A
+        // vertex is at the top (A-B-C)
         if (c.position.y > b.position.y) {
             temp := c
             c = b
@@ -498,48 +499,6 @@ draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
     }
 }
 
-draw_line_2d :: proc(renderer: ^Renderer, lines: []model.Line2D) {
-
-    for i in 0..<len(lines) {
-        line := lines[i]
-
-        resolution: [2]f32 = {f32(renderer.image.x_image.width),
-                              f32(renderer.image.x_image.height)}
-        
-        // TODO: Transformation could be SIMDed?
-        trans_a := [2]f32{
-            math.floor((line.a.position.x + 1.0) * 0.5 * (resolution.x - 1)),
-            math.floor((1.0 - line.a.position.y) * 0.5 * (resolution.y - 1))
-        }
-        trans_b := [2]f32{
-            math.floor((line.b.position.x + 1.0) * 0.5 * (resolution.x - 1)),
-            math.floor((1.0 - line.b.position.y) * 0.5 * (resolution.y - 1))
-        }
-
-        dx := trans_b.x - trans_a.x
-        dy := trans_b.y - trans_a.y
-
-        x_inc, y_inc: f32
-        max: u32
-
-        step: f32 = math.abs(dx) >= math.abs(dy) ? math.abs(dx) : math.abs(dy)
-
-        dx = dx / step
-        dy = dy / step
-
-        x := trans_a.x
-        y := trans_a.y
-
-        // TODO: fix crashing when lines go out of bounds
-        for i := 0; i <= int(step); i += 1 {
-            x = x + dx
-            y = y + dy
-
-            put_pixel(renderer.image, u32(x), u32(y), color.to_u32(test_line.color))
-        }
-    }
-}
-
 put_pixel :: proc(img: window.WindowImage, x, y, color: u32) {
     index := y * u32(img.x_image.width) + x
 
@@ -547,67 +506,4 @@ put_pixel :: proc(img: window.WindowImage, x, y, color: u32) {
         index < u32(len(img.buffer)), "Drawing pixel out of bounds!")
 
     img.buffer[index] = color
-}
-
-draw_line_3d :: proc(renderer: ^Renderer, lines: []model.Line3D) {
-    for i in 0..<len(lines) {
-        line := lines[i]
-        line.a.position = renderer.camera.proj_matrix *
-                          renderer.camera.view_matrix *
-                          line.a.position
-        line.b.position = renderer.camera.proj_matrix *
-                          renderer.camera.view_matrix *
-                          line.b.position
-
-        line.a.position /= line.a.position.w
-        line.b.position /= line.b.position.w
-
-        line.a.position.x = math.clamp(line.a.position.x, -1.0, 1.0)
-        line.a.position.y = math.clamp(line.a.position.y, -1.0, 1.0)
-
-        line.b.position.x = math.clamp(line.b.position.x, -1.0, 1.0)
-        line.b.position.y = math.clamp(line.b.position.y, -1.0, 1.0)
-
-        resolution: [2]f32 = {f32(renderer.image.x_image.width),
-                              f32(renderer.image.x_image.height)}
-
-        trans_a := [2]f32{
-            math.floor((line.a.position.x + 1.0) * 0.5 * (resolution.x - 1)),
-            math.floor((1.0 - line.a.position.y) * 0.5 * (resolution.y - 1))
-        }
-        trans_b := [2]f32{
-            math.floor((line.b.position.x + 1.0) * 0.5 * (resolution.x - 1)),
-            math.floor((1.0 - line.b.position.y) * 0.5 * (resolution.y - 1))
-        }
-
-        dx := trans_b.x - trans_a.x
-        dy := trans_b.y - trans_a.y
-        dz := line.b.position.z - line.a.position.z
-
-        x_inc, y_inc: f32
-        max: u32
-
-        step: f32 = math.max(math.abs(dx), math.abs(dy), math.abs(dz))
-
-        dx = dx / step
-        dy = dy / step
-        dz = dz / step
-
-        x := trans_a.x
-        y := trans_a.y
-        z := line.a.position.z
-
-        // TODO: fix crashing when lines go out of bounds
-        for i := 0; i < int(step); i += 1 {
-            x = x + dx
-            y = y + dy
-            z = z + dz
-
-            index := u32(y) * u32(renderer.image.x_image.width) + u32(x)
-            renderer.image.buffer[index] = color.to_u32(line.color)
-            renderer.depth_buffer[index] = z
-        }
-
-    }
-
 }

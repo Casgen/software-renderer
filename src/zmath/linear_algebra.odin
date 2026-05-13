@@ -9,6 +9,11 @@ lerp_f32 :: #force_inline proc(a, b, t: f32) -> f32 {
     return simd.fma(1 - t, a, t * b)
 }
 
+lerp_2xf32 :: #force_inline proc(a, b: [2]f32, t: f32) -> [2]f32 {
+    flipped_t := 1 - t
+    return {simd.fma(flipped_t, a.x, t * b.x), simd.fma(flipped_t, a.y, t * b.y)}
+}
+
 lerp_4xf32 :: #force_inline proc(a, b: [4]f32, t: f32) -> [4]f32 {
     a_simd: simd.f32x4 = simd.from_array(a)
     b_simd: simd.f32x4 = simd.from_array(b)
