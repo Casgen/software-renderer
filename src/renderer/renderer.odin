@@ -1,8 +1,6 @@
 package renderer
 
 import "core:math/linalg"
-import "vendor:x11/xlib"
-import "core:slice"
 import "core:math"
 import "core:fmt"
 import "core:math/rand"
@@ -12,11 +10,10 @@ import "core:time"
 import "../platform/window"
 import "../zmath/color"
 import "../zmath"
-import "../profiler"
 import "../platform/input"
-import "../model"
+import "../core"
+import "../core/model"
 
-// TODO: Create a line rasterized (Probably just a DDA algorithm)
 
 Mouse_State :: struct {
     pos: [2]i32,
@@ -24,21 +21,9 @@ Mouse_State :: struct {
     rmb_pressed: bool,
 }
 
-changed := true
-test_line := model.Line2D{
-    a = model.Point2D{
-        position = {0, 0},
-    },
-    b = model.Point2D{
-        position = {0, 0.5}
-    },
-    color = color.Color4xU8{255, 0, 0, 0}
-}
-
-// TODO: Do not directly access the x_image struct
 Renderer :: struct {
-    image: window.WindowImage,
-    depth_buffer: []f32,
+    image: ^core.Image,
+    depth_buffer: DepthBuffer,
     acc_time: f32,
     camera: Camera,
     mouse_state: Mouse_State,
@@ -48,10 +33,13 @@ dispatch_event :: proc(renderer: ^Renderer, event: window.Event) {
     #partial switch event_type in event {
     case window.Resize_Window:
         renderer.image = event_type.image
-        renderer.depth_buffer = event_type.depth_buffer
+
+        depth_buffer_destroy(&renderer.depth_buffer)
+        renderer.depth_buffer = depth_buffer_create(event_type.width,
+            event_type.height)
+
         camera_set_resolution(&renderer.camera, event_type.width,
             event_type.height)
-        changed = true
     case window.Key_Released: on_key_released(renderer, event_type)
     case window.Key_Pressed: on_key_pressed(renderer, event_type)
     case window.MouseBtn_Released: on_mousebtn_released(renderer, event_type)
@@ -88,14 +76,6 @@ on_key_pressed :: proc(renderer: ^Renderer, event: window.Key_Pressed) {
         camera_set_move_backwards(&renderer.camera, true)
     case .KB_D:
         camera_set_move_right(&renderer.camera, true)
-    case .KB_UP:
-        test_line.b.position.y += 0.05
-    case .KB_LEFT:
-        test_line.b.position.x -= 0.05
-    case .KB_DOWN:
-        test_line.b.position.y -= 0.05
-    case .KB_RIGHT:
-        test_line.b.position.x += 0.05
     }
 }
 
@@ -129,39 +109,45 @@ on_mouse_moved :: proc(renderer: ^Renderer, event: window.Pointer_Moved) {
 }
 
 
-create_renderer :: proc(
-    image: window.WindowImage,
-    depth_buffer: []f32
-) -> Renderer {
+create_renderer :: proc(image: ^core.Image) -> Renderer {
     return {
         image = image,
-        depth_buffer = depth_buffer,
+        depth_buffer = depth_buffer_create(u32(image.width), u32(image.height)),
         camera = camera_create({0, 0, -1}, {0, 0, 0},
-            u32(image.x_image.width), u32(image.x_image.height)),
+            u32(image.width), u32(image.height)),
         acc_time = 0.0
     }
 }
 
-renderer_update :: proc(renderer: ^Renderer, delta_time: time.Duration) {
+destroy_renderer :: proc(renderer: ^Renderer) {
+    depth_buffer_destroy(&renderer.depth_buffer)
+}
+
+render_update :: proc(renderer: ^Renderer, delta_time: time.Duration) {
     camera_update(&renderer.camera, f32(time.duration_seconds(delta_time)))
     renderer.acc_time += f32(time.duration_seconds(delta_time))
 }
 
-random_vertex_2d :: proc() -> model.Point2D{
+render_clear :: proc(renderer: ^Renderer) {
+    window.clear_image(renderer.image)
+    depth_buffer_clear(&renderer.depth_buffer)
+}
+
+random_vertex_2d :: proc() -> model.Vertex2D{
 
     x := rand.float32() * 2.0 - 1.0
     y := rand.float32() * 2.0 - 1.0
 
-    return model.Point2D{linalg.Vector2f32{x, y}, color.rand_color4xf32()}
+    return model.Vertex2D{linalg.Vector2f32{x, y}, color.rand_color4xf32()}
 }
 
-random_vertex_4d :: proc() -> model.Point4D {
+random_vertex_4d :: proc() -> model.Vertex4D {
 
     x := rand.float32() - 0.5
     y := rand.float32() - 0.5
     z := rand.float32() - 0.5
 
-    return model.Point4D{
+    return model.Vertex4D{
         linalg.Vector4f32{x, y, z, 1.0},
         color.rand_color4xf32()
     }
@@ -196,10 +182,10 @@ generate_random_2d_triangles :: proc(count: u32) -> []model.Triangle2D {
 
 generate_random_3d_triangles :: proc(count: u32) -> []model.Triangle3D {
 
-    // triangles := make([]model.Triangle3D, count)
+    // triangles := make([]core.Triangle3D, count)
     //
     // for i in 0..<len(triangles) {
-    //     triangles[i] = model.Triangle3D{
+    //     triangles[i] = core.Triangle3D{
     //         a = random_vertex_4d(),
     //         b = random_vertex_4d(),
     //         c = random_vertex_4d(),
@@ -212,9 +198,9 @@ generate_random_3d_triangles :: proc(count: u32) -> []model.Triangle3D {
     
     for i in 0..<len(triangles) {
         triangles[i] = model.Triangle3D{
-            a = model.Point4D{{0, 0.5, 0, 1}, color.rand_color4xf32()},
-            b = model.Point4D{{-0.5, 0, 0, 1}, color.rand_color4xf32()},
-            c = model.Point4D{{0, -0.5, 0, 1}, color.rand_color4xf32()},
+            a = model.Vertex4D{{0, 0.5, 0, 1}, color.rand_color4xf32()},
+            b = model.Vertex4D{{-0.5, 0, 0, 1}, color.rand_color4xf32()},
+            c = model.Vertex4D{{0, -0.5, 0, 1}, color.rand_color4xf32()},
         }
     }
     
@@ -247,8 +233,8 @@ draw :: proc(renderer: ^Renderer, triangles: []model.Triangle2D) {
         }
 
 
-        width: f32 = f32(renderer.image.x_image.width)
-        height: f32 = f32(renderer.image.x_image.height)
+        width: f32 = f32(renderer.image.width)
+        height: f32 = f32(renderer.image.height)
 
         // Transform vertices to project them onto the screen
         // TODO: Might have to deal with odd value width and height...
@@ -292,9 +278,9 @@ draw :: proc(renderer: ^Renderer, triangles: []model.Triangle2D) {
             }
 
             x_min := math.max(x1, 0)
-            x_max := math.min(x2, renderer.image.x_image.width - 1)
+            x_max := math.min(x2, i32(renderer.image.width) - 1)
 
-            row := y * i32(renderer.image.x_image.width)
+            row := y * i32(renderer.image.width)
 
             // TODO: Probably could be SIMDed
             for x := x_min; x < x_max; x += 1 {
@@ -326,9 +312,9 @@ draw :: proc(renderer: ^Renderer, triangles: []model.Triangle2D) {
             }
 
             x_min := math.max(x1, 0)
-            x_max := math.min(x2, renderer.image.x_image.width - 1)
+            x_max := math.min(x2, i32(renderer.image.width) - 1)
 
-            row := y * i32(renderer.image.x_image.width)
+            row := y * i32(renderer.image.width)
 
             // TODO: Probably could be SIMDed
             for x := x_min; x < x_max; x += 1 {
@@ -342,7 +328,6 @@ draw :: proc(renderer: ^Renderer, triangles: []model.Triangle2D) {
 }
 
 draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
-
     for i in 0..<len(triangles) {
         tri := triangles[i]
         tri.a.position = renderer.camera.proj_matrix *
@@ -384,8 +369,8 @@ draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
         }
 
 
-        width: f32 = f32(renderer.image.x_image.width)
-        height: f32 = f32(renderer.image.x_image.height)
+        width: f32 = f32(renderer.image.width)
+        height: f32 = f32(renderer.image.height)
 
         
         trans_a: [2]f32 = {math.floor((a.position.x + 1.0) * 0.5 * width),
@@ -402,7 +387,7 @@ draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
         bc_vec := trans_b - trans_c
         is_cw_winding := -ac_vec.x * bc_vec.y + bc_vec.x * ac_vec.y < 0
 
-        // Cutoff the coordinates to fit within the framebuffer.
+        // FIXME: Cutoff the coordinates to fit within the framebuffer.
         // Would do access out of bounds!
         y_min := i32(math.max(trans_a.y, 0))
         y_max := i32(math.min(trans_b.y, height - 1))
@@ -410,7 +395,6 @@ draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
         inverted_t: f32 = is_cw_winding ? 1.0 : 0.0
 
         for y := y_min; y < y_max; y += 1 {
-
             diff := (f32(y) - trans_a.y) 
             t_ab := diff / (trans_b.y - trans_a.y) // T between A-B
             t_ac := diff / (trans_c.y - trans_a.y) // T between A-C
@@ -432,19 +416,17 @@ draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
             }
 
             x_min := math.max(x1, 0)
-            x_max := math.min(x2, renderer.image.x_image.width - 1)
+            x_max := math.min(x2, i32(renderer.image.width) - 1)
 
-            row := y * i32(renderer.image.x_image.width)
+            row := y * i32(renderer.image.width)
 
             // TODO: Probably could be SIMDed
             for x := x_min; x < x_max; x += 1 {
                 t := math.abs(inverted_t - (f32(x - x1) / f32(x2 - x1)))
                 i := row + x
                 z := zmath.lerp_f32(z1, z2, t)
-
-                old_z := renderer.depth_buffer[i]
-                if old_z > z {
-                    renderer.depth_buffer[i] = z
+                
+                if depth_buffer_write(&renderer.depth_buffer, u32(x), u32(y), z) {
                     color_abc := zmath.lerp_4xf32(color_ab, color_ac, t)
                     result_pixel := color.to_u32(color_abc)
                     renderer.image.buffer[i] = result_pixel
@@ -476,9 +458,9 @@ draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
             }
 
             x_min := math.max(x1, 0)
-            x_max := math.min(x2, renderer.image.x_image.width - 1)
+            x_max := math.min(x2, i32(renderer.image.width) - 1)
 
-            row := y * i32(renderer.image.x_image.width)
+            row := y * i32(renderer.image.width)
 
             // TODO: Probably could be SIMDed
             for x := x_min; x < x_max; x += 1 {
@@ -487,8 +469,7 @@ draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
 
                 z := zmath.lerp_f32(z1, z2, t)
 
-                if renderer.depth_buffer[i] > z {
-                    renderer.depth_buffer[i] = z
+                if depth_buffer_write(&renderer.depth_buffer, u32(x), u32(y), z) {
                     color_abc := zmath.lerp_4xf32(color_bc, color_ac, t)
                     result_pixel := color.to_u32(color_abc)
                     renderer.image.buffer[row + x] = result_pixel
@@ -499,10 +480,137 @@ draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
     }
 }
 
-put_pixel :: proc(img: window.WindowImage, x, y, color: u32) {
-    index := y * u32(img.x_image.width) + x
+draw_line_2d :: proc(renderer: ^Renderer, lines: []model.Line2D) {
+    for i in 0..<len(lines) {
+        line := &lines[i]
 
-    assert(x < u32(img.x_image.width) && y < u32(img.x_image.height) &&
+        resolution: [2]f32 = {f32(renderer.image.width),
+                              f32(renderer.image.height)}
+
+        model.line_liang_barsky_clip_2d(-1.0, 1.0, -1.0, 1.0, line)
+        
+        // TODO: Transformation could be SIMDed?
+        trans_a := [2]f32{
+            math.floor((line.a.position.x + 1.0) * 0.5 * (resolution.x - 1)),
+            math.floor((1.0 - line.a.position.y) * 0.5 * (resolution.y - 1))
+        }
+        trans_b := [2]f32{
+            math.floor((line.b.position.x + 1.0) * 0.5 * (resolution.x - 1)),
+            math.floor((1.0 - line.b.position.y) * 0.5 * (resolution.y - 1))
+        }
+
+        dx := trans_b.x - trans_a.x
+        dy := trans_b.y - trans_a.y
+
+        x_inc, y_inc: f32
+        max: u32
+
+        step: f32 = math.abs(dx) >= math.abs(dy) ? math.abs(dx) : math.abs(dy)
+
+        dx = dx / step
+        dy = dy / step
+
+        d_rgba := (line.b.color - line.a.color) / linalg.Vector4f32{step, step,
+            step, step}
+
+        x := trans_a.x
+        y := trans_a.y
+
+        rgba: color.Color4xF32 = line.b.color
+
+        // TODO: fix crashing when lines go out of bounds
+        for i := 0; i <= int(step); i += 1 {
+            x += dx
+            y += dy
+
+            rgba += d_rgba
+
+            put_pixel(renderer.image, u32(x), u32(y), color.to_u32(rgba))
+        }
+    }
+}
+
+
+// TODO: Maybe convert this into a fixed point calculation if possible
+draw_line_3d :: proc(renderer: ^Renderer, lines: []model.Line3D) {
+    for i in 0..<len(lines) {
+        line := &lines[i]
+        line.a.position = renderer.camera.proj_matrix *
+                          renderer.camera.view_matrix *
+                          line.a.position
+        line.b.position = renderer.camera.proj_matrix *
+                          renderer.camera.view_matrix *
+                          line.b.position
+
+        // TODO: Do fast clipping.
+        if (line.a.position.x < -line.a.position.w || line.a.position.x > line.a.position.w) &&
+           (line.b.position.x < -line.b.position.w || line.b.position.x > line.b.position.w) {
+            return 
+        }
+
+        line.a.position /= line.a.position.w
+        line.b.position /= line.b.position.w
+        
+        // TODO: Maybe this is unecessary to do after every line.
+        // Precompute this during init
+        resolution: [2]f32 = {f32(renderer.image.width),
+                              f32(renderer.image.height)}
+
+        if !model.line_liang_barsky_clip_3d(-1.0, 1.0, -1.0, 1.0, line) do return 
+
+
+        trans_a := [2]f32{
+            math.floor((line.a.position.x + 1.0) * 0.5 * (resolution.x - 1)),
+            math.floor((1.0 - line.a.position.y) * 0.5 * (resolution.y - 1))
+        }
+        trans_b := [2]f32{
+            math.floor((line.b.position.x + 1.0) * 0.5 * (resolution.x - 1)),
+            math.floor((1.0 - line.b.position.y) * 0.5 * (resolution.y - 1))
+        }
+
+        dx := trans_b.x - trans_a.x
+        dy := trans_b.y - trans_a.y
+        dz := line.b.position.z - line.a.position.z
+
+        x_inc, y_inc: f32
+        max: u32
+
+        step: f32 = math.max(math.abs(dx), math.abs(dy), math.abs(dz))
+
+        dx = dx / step
+        dy = dy / step
+        dz = dz / step
+        // TODO: Could be maybe done in integer representation
+        d_rgba := (line.b.color - line.a.color) / linalg.Vector4f32{step, step,
+            step, step}
+
+        x := trans_a.x
+        y := trans_a.y
+        z := line.a.position.z
+        rgba: color.Color4xF32 = line.b.color
+
+        for i := 0; i < int(step); i += 1 {
+            x += dx
+            y += dy
+            z += dz
+            rgba += d_rgba
+
+            // TODO: probably doing uneccessary calculation underneath depth
+            // buffer. Maybe merge Depth buffer and image buffer?
+            if depth_buffer_write(&renderer.depth_buffer, u32(x), u32(y), z) {
+                index := u32(y) * renderer.image.width + u32(x)
+                renderer.image.buffer[index] = color.to_u32(rgba)
+            }
+        }
+
+    }
+
+}
+
+put_pixel :: proc(img: ^core.Image, x, y, color: u32) {
+    index := y * u32(img.width) + x
+
+    assert(x < img.width && y < img.height &&
         index < u32(len(img.buffer)), "Drawing pixel out of bounds!")
 
     img.buffer[index] = color

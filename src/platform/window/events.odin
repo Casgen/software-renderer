@@ -1,10 +1,10 @@
 package platform
 
 import "../input"
+import "../../core"
 
 Resize_Window :: struct {
-    image: WindowImage,
-    depth_buffer: []f32,
+    image: ^core.Image,
     width: u32,
     height: u32
 }

@@ -22,7 +22,7 @@ to_u32_from_color4xU8 :: #force_inline proc(color: Color4xU8) -> u32 {
 }
 
 to_u32_from_color4xF32 :: #force_inline proc(color: Color4xF32) -> u32 {
-    result := to_color4xu32(color)
+    result := to_color4xu8(color)
     return transmute(u32)result
 }
 
@@ -39,7 +39,7 @@ to_color4xf32 :: proc(color: Color4xU8) -> Color4xF32 {
     }
 }
 
-to_color4xu32 :: proc(color: Color4xF32) -> Color4xU8 {
+to_color4xu8 :: proc(color: Color4xF32) -> Color4xU8 {
     return Color4xU8{
         u8(color.r * 255.0),
         u8(color.g * 255.0),

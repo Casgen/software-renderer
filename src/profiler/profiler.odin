@@ -107,6 +107,7 @@ end_profiling :: proc() {
     total_tsc_elapsed: u64 = total_end - profiler.tsc_start
 
     assert(profiler.has_profiling_started, "You haven't started profiling!")
+    profiler.has_profiling_started = false
 
     cpu_freq := estimate_cpu_freq()
     total_cpu_ms := 1000 * f64(total_tsc_elapsed) / f64(cpu_freq)

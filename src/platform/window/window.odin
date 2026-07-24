@@ -4,14 +4,12 @@ import "vendor:x11/xlib"
 import "core:fmt"
 import "core:slice"
 import "base:runtime"
-import "core:mem"
 import "core:strings"
 import "core:c/libc"
 import "core:c"
-import "core:simd"
-
 
 import "../input"
+import "../../core"
 
 WindowCreateParams :: struct {
     width, height: u32,
@@ -23,17 +21,12 @@ WindowAttributes :: struct {
     depth: i32
 }
 
-WindowImage :: struct {
-    x_image: ^xlib.XImage,
-    buffer: []u32,
-}
-
 Window :: struct {
     display: ^xlib.Display,
     visual: ^xlib.Visual,
     window: xlib.Window, // Windows act as Drawables!
-    image: WindowImage,
-    depth_buffer: []f32,
+    ximage: ^xlib.XImage,
+    image: core.Image,
     screen: i32,
     gc: xlib.GC,
 }
@@ -78,8 +71,7 @@ poll_event :: #force_inline proc(
         resize(window, u32(x_event.xresizerequest.width),
             u32(x_event.xresizerequest.height))
         out_event^ = Resize_Window{
-            image = window.image,
-            depth_buffer = window.depth_buffer,
+            image = &window.image,
             width = u32(x_event.xresizerequest.width),
             height = u32(x_event.xresizerequest.height)
         }
@@ -87,8 +79,7 @@ poll_event :: #force_inline proc(
         resize(window, u32(x_event.xconfigure.width),
             u32(x_event.xconfigure.height))
         out_event^ = Resize_Window{
-            image = window.image,
-            depth_buffer = window.depth_buffer,
+            image = &window.image,
             width = u32(x_event.xconfigure.width),
             height = u32(x_event.xconfigure.height)
         }
@@ -132,18 +123,28 @@ next_event :: proc(window: ^Window) -> xlib.XEvent {
     return event
 }
 
-show:: #force_inline proc(win: ^Window) {
+show :: #force_inline proc(win: ^Window) {
     xlib.MapWindow(win.display, win.window)
     xlib.Flush(win.display)
 }
 
-hide:: #force_inline proc(win: ^Window) {
+hide :: #force_inline proc(win: ^Window) {
     xlib.UnmapWindow(win.display, win.window)
 }
 
+// WARN: Have to use the libc malloc. This is because the XDestroyImage
+// procedure calls free on the given malloced data and it looks like it 
+// expects that it uses C's malloc. Why can't we do it with mem.alloc()?
+// Don't know really. Probably it's because it doesn't use C's malloc().
+// In that case it will crash while destroying the image.
+@private
+malloc_buffer :: #force_inline proc($T: typeid, len: u64) -> []T {
+    data_ptr := libc.malloc(c.size_t(len * size_of(T)))
+    return slice.from_ptr(transmute(^T)data_ptr, int(len))
+}
+
 destroy:: #force_inline proc(win: ^Window) {
-    delete(win.depth_buffer)
-    xlib.DestroyImage(win.image.x_image)
+    xlib.DestroyImage(win.ximage)
     xlib.UnmapWindow(win.display, win.window)
     xlib.DestroyWindow(win.display, win.window)
     xlib.CloseDisplay(win.display)
@@ -152,24 +153,31 @@ destroy:: #force_inline proc(win: ^Window) {
 // TODO: Have to make sure that width and height are somehow synchronized.
 // Taking an image's width and height isn't probably a good idea?
 clear :: #force_inline proc(win: ^Window, clear_color: u32 = 0) {
-    for i in 0..<len(win.image.buffer) do win.image.buffer[i] = clear_color
-    for i in 0..<len(win.depth_buffer) do win.depth_buffer[i] = 1.0
+    clear_image(&win.image)
 }
 
+clear_image :: #force_inline proc(image: ^core.Image, clear_color: u32 = 0) {
+    for i in 0..<len(image.buffer) do image.buffer[i] = clear_color
+}
 
-create_rgb_image :: proc(win: ^Window, width, height: u32) -> WindowImage {
+@private
+create_rgb_image :: proc(
+    win: ^Window,
+    width, height: u32
+) -> (core.Image, ^xlib.XImage) {
     depth := xlib.DefaultDepth(win.display, win.screen);
 
     assert(depth >= 0)
 
-    img_data := libc.malloc(c.size_t(width * height * 4))
-    img_buffer := slice.from_ptr(transmute(^u32)img_data,
-        int(width * height))
+    img_buffer := malloc_buffer(u32, u64(width * height))
+    x_img := xlib.CreateImage(win.display, win.visual, u32(depth), .ZPixmap,
+        0, raw_data(img_buffer), width, height, 32, 0)
 
-    img := xlib.CreateImage(win.display, win.visual, u32(depth), .ZPixmap,
-        0, img_data, width, height, 32, 0)
-
-    return WindowImage{ x_image = img, buffer = img_buffer }
+    return core.Image{
+        width = width,
+        height = height,
+        buffer = img_buffer
+    }, x_img
 }
 
 present :: #force_inline proc(win: ^Window) {
@@ -177,21 +185,16 @@ present :: #force_inline proc(win: ^Window) {
         win.display,
         win.window,
         win.gc,
-        win.image.x_image,
+        win.ximage,
         0, 0, 0, 0,
-        u32(win.image.x_image.width),
-        u32(win.image.x_image.height),
+        u32(win.image.width),
+        u32(win.image.height),
     )
 }
 
-resize:: proc(win: ^Window, width, height: u32) {
-    xlib.DestroyImage(win.image.x_image)
-    win.image = create_rgb_image(win, width, height)
-
-    delete(win.depth_buffer)
-    pixel_count := width * height
-    win.depth_buffer = make([]f32, pixel_count)
-    for i in 0..<pixel_count do win.depth_buffer[i] = 1.0
+resize :: proc(win: ^Window, width, height: u32) {
+    xlib.DestroyImage(win.ximage)
+    win.image, win.ximage = create_rgb_image(win, width, height)
 }
 
 create :: proc(win_params: WindowCreateParams) -> (Window, bool) {
@@ -201,7 +204,8 @@ create :: proc(win_params: WindowCreateParams) -> (Window, bool) {
             screen = 0,
             display = nil,
             window = 0,
-            image = WindowImage{ nil, nil },
+            image = core.Image{},
+            ximage = nil,
         }, false
     }
 
@@ -226,29 +230,18 @@ create :: proc(win_params: WindowCreateParams) -> (Window, bool) {
 
     window := xlib.CreateWindow(display, root, 0, 0, u32(win_params.width),
         u32(win_params.height), 0, depth, .InputOutput, visual,
-        {.CWBitGravity , .CWBackPixel , .CWColormap , .CWEventMask },
+        { .CWBitGravity , .CWBackPixel , .CWColormap , .CWEventMask },
         &window_attr)
 
     gc := xlib.DefaultGC(display, screen)
 
     assert(depth >= 0)
 
-    // WARN: Have to use the libc malloc. This is because the XDestroyImage
-    // procedure calls free on the given malloced data and it looks like it 
-    // expects that it uses C's malloc. Why can't we do it with mem.alloc()?
-    // Don't know really. Probably it's because it doesn't use C's malloc().
-    // In that case it will crash while destroying the image.
     pixel_count := win_params.width * win_params.height
-    img_data := libc.malloc(c.size_t(pixel_count * 4))
-    assert(img_data != nil, "Failed to allocate a Color buffer!")
-    img_buffer := slice.from_ptr(transmute(^u32)img_data,
-        int(pixel_count))
+    img_buffer := malloc_buffer(u32, u64(win_params.width * win_params.height))
     
     image := xlib.CreateImage(display, visual, u32(depth), .ZPixmap,
-        0, img_data, win_params.width, win_params.height, 32, 0)
-
-    depth_buffer := make([]f32, pixel_count)
-    for i in 0..<pixel_count do depth_buffer[i] = 1.0
+        0, raw_data(img_buffer), win_params.width, win_params.height, 32, 0)
 
     // NOTE: When setting class hints, are strings getting copied?
     if win_params.app_name != "" || win_params.class_name != "" {
@@ -264,8 +257,12 @@ create :: proc(win_params: WindowCreateParams) -> (Window, bool) {
         window = window,
         screen = screen,
         visual = visual,
-        image = WindowImage{image, img_buffer},
-        depth_buffer = depth_buffer,
+        ximage = image,
+        image = core.Image{
+            width = win_params.width,
+            height = win_params.height,
+            buffer = img_buffer
+        },
         gc = gc,
     }, true
 }
