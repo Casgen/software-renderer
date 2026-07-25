@@ -2,8 +2,8 @@ package profiler
 
 import "core:simd/x86"
 import "core:sys/posix"
-import "base:runtime"
 import "core:fmt"
+import "core:strings"
 
 OS_TIMER_FREQ :: 1_000_000
 
@@ -16,6 +16,7 @@ Timer :: struct {
 TimerResult :: struct {
     os_elapsed, cpu_elapsed: u64,
     cpu_freq: u64,
+    duration_ms: f32,
     label: string
 }
 
@@ -23,11 +24,11 @@ timer_start :: proc(label: string) -> Timer {
     return Timer{
         os_start = read_os_timer(),
         cpu_start = x86._rdtsc(),
-        label = label,
+        label = strings.clone(label)
     }
 }
 
-timer_end :: proc(timer: ^Timer, print: bool = true) -> TimerResult {
+timer_end :: proc(timer: ^Timer) -> TimerResult {
 
     os_elapsed := read_os_timer() - timer.os_start
     cpu_elapsed := x86._rdtsc() - timer.cpu_start
@@ -39,30 +40,35 @@ timer_end :: proc(timer: ^Timer, print: bool = true) -> TimerResult {
             os_elapsed = 0,
             cpu_elapsed = 0,
             cpu_freq = 0,
-            label = timer.label
+            label = timer.label,
+            duration_ms = 0
         }
     } else {
         result = {
             os_elapsed = os_elapsed,
             cpu_elapsed = cpu_elapsed,
             cpu_freq = OS_TIMER_FREQ * cpu_elapsed / os_elapsed,
-            label = timer.label
+            label = timer.label,
+            duration_ms = f32(result.os_elapsed) / f32(result.cpu_freq) * 1000.0
         }
     }
-
-    millis := f32(result.os_elapsed) / f32(result.cpu_freq) * 1000.0
-
-    if print {
-        fmt.printfln(
-            "'%s'\n\tCpu Freq: %d | OS Elapsed: %.10f ms (%d ticks) | CPU Elapsed %d",
-            result.label, result.cpu_freq, millis, result.os_elapsed, result.cpu_elapsed
-        )
-    }
-
     return result
 }
 
-print_result :: proc(result: ^TimerResult) {
+timer_fmt_result :: #force_inline proc(timer_result: ^TimerResult) -> string {
+    return fmt.aprintf(
+        "'%s'\n\tCpu Freq: %d | OS Elapsed: %.10f ms (%d ticks) | CPU Elapsed %d",
+        timer_result.label, timer_result.cpu_freq, timer_result.duration_ms,
+        timer_result.os_elapsed, timer_result.cpu_elapsed
+    )
+}
+
+timer_destroy :: proc(timer: ^Timer) {
+    delete(timer.label)
+    timer.cpu_start = 0
+    timer.os_end = 0
+    timer.os_start = 0
+    timer.label = ""
 }
 
 estimate_cpu_freq :: proc() -> u64 {

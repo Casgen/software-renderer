@@ -1,7 +1,7 @@
 package model
 
 import "core:math/linalg"
-import "../../zmath/color"
+import "../../core/zmath/color"
 
 Vertex4D :: struct {
     position: linalg.Vector4f32,

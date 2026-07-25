@@ -1,10 +1,8 @@
 package profiler
 
 import "core:fmt"
-import "core:math"
 import "core:sys/linux"
 import "core:simd/x86"
-import "../utils"
 import "../constants"
 
 

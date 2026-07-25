@@ -10,6 +10,7 @@ import "core:c"
 
 import "../input"
 import "../../core"
+import clr "../../core/zmath/color"
 
 WindowCreateParams :: struct {
     width, height: u32,
@@ -29,6 +30,9 @@ Window :: struct {
     image: core.Image,
     screen: i32,
     gc: xlib.GC,
+    color_map: xlib.Colormap,
+    color_cache: map[u64]uint, // Color value -> xlib XColor.pixel (Color ID)
+    current_color: uint // Current XColor.pixel
 }
 
 @private
@@ -148,6 +152,7 @@ destroy:: #force_inline proc(win: ^Window) {
     xlib.UnmapWindow(win.display, win.window)
     xlib.DestroyWindow(win.display, win.window)
     xlib.CloseDisplay(win.display)
+    delete(win.color_cache)
 }
 
 // TODO: Have to make sure that width and height are somehow synchronized.
@@ -206,6 +211,7 @@ create :: proc(win_params: WindowCreateParams) -> (Window, bool) {
             window = 0,
             image = core.Image{},
             ximage = nil,
+            color_map = 0
         }, false
     }
 
@@ -215,6 +221,9 @@ create :: proc(win_params: WindowCreateParams) -> (Window, bool) {
     screen := xlib.DefaultScreen(display)
     visual := xlib.DefaultVisual(display, screen)
     depth := xlib.DefaultDepth(display, screen);
+    assert(depth >= 0)
+
+    color_map := xlib.DefaultColormap(display, screen)
 
     window_attr: xlib.XSetWindowAttributes 
     window_attr.bit_gravity = .StaticGravity
@@ -234,8 +243,15 @@ create :: proc(win_params: WindowCreateParams) -> (Window, bool) {
         &window_attr)
 
     gc := xlib.DefaultGC(display, screen)
+    gc_values: xlib.XGCValues
 
-    assert(depth >= 0)
+    // WARN: Implementation is weird. When the retrieval is successful, it
+    // returns a non-zero result. From the outside, it feels like it failed
+    // with BadRequest but that means success (implementation of xlib
+    // returns True == BadRequest or False == Success). Was this is intentional
+    // or a mistake? Manual describes what I described which is nonsense.
+    assert(xlib.GetGCValues(display, gc, { .GCForeground }, &gc_values) ==
+        xlib.Status.BadRequest, "Failed to retrieve Xlib GC Values!")
 
     pixel_count := win_params.width * win_params.height
     img_buffer := malloc_buffer(u32, u64(win_params.width * win_params.height))
@@ -264,6 +280,9 @@ create :: proc(win_params: WindowCreateParams) -> (Window, bool) {
             buffer = img_buffer
         },
         gc = gc,
+        color_map = color_map,
+        color_cache = {},
+        current_color = gc_values.foreground
     }, true
 }
 
@@ -335,11 +354,44 @@ fill_rectangle :: #force_inline proc(win: ^Window, x, y, width, height: u32) {
         width, height)
 }
 
+@private
+create_color_cache_key :: proc(color: clr.Color3xU16) -> u64 {
+    return u64(color.r) | u64(color.g) << 16 | u64(color.b) << 32
+}
+
 draw_string :: #force_inline proc(
     win: ^Window,
     message: string,
-    pos_x, pos_y: u32
+    pos_x, pos_y: u32,
+    color: clr.Color3xU8
 ) {
+    mapped_color := clr.map_color3xU8_to_color3xU16(color)
+    key := create_color_cache_key(mapped_color)
+
+    color_id, ok := win.color_cache[key]
+    xcolor: xlib.XColor
+
+    if !ok {
+        xcolor = xlib.XColor{
+            red = mapped_color.r,
+            green = mapped_color.g,
+            blue = mapped_color.b,
+        }
+
+        // WARN: Same thing with the weird declaration/definition. BadRequest
+        // is success (non-zero = 1 result is successful)
+        assert(xlib.AllocColor(win.display, win.color_map, &xcolor) ==
+            xlib.Status.BadRequest, "Failed to allocate XColor!")
+        win.color_cache[key] = xcolor.pixel
+        color_id = xcolor.pixel
+    }
+
+    xlib.SetForeground(win.display, win.gc, color_id)
+    xlib.Sync(win.display, true)
     xlib.DrawString(win.display, win.window, win.gc, i32(pos_x), i32(pos_y),
         raw_data(message), i32(len(message)))
+
+    // Revert back to the previous color
+    xlib.SetForeground(win.display, win.gc, win.current_color)
+    xlib.Sync(win.display, true)
 }

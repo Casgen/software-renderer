@@ -1,9 +1,7 @@
 package profiler
 
-import "core:slice"
 import "core:simd/x86"
 import "core:fmt"
-import "core:strings"
 
 ProfileAnchor :: struct {
     tsc_elapsed_root: u64,
@@ -45,6 +43,8 @@ IS_PROFILING :: true
 begin_profiling :: proc() {
     profiler.has_profiling_started = true
     profiler.tsc_start = x86._rdtsc()
+    profiler.anchors_count = 0
+    profiler.anchors = {}
 }
 
 /*
