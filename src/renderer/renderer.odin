@@ -555,7 +555,7 @@ clip_triangle :: proc(a, b, c: ^model.Vertex4D) -> []model.Triangle3D {
     new_triangles := make([]model.Triangle3D, len(out_vertices) - 2)
 
     push_index: u32 = 0
-    for i in 1 ..<(len(out_vertices) - 1) {
+    for i in 1 ..< (len(out_vertices) - 1) {
         new_triangles[push_index] = model.Triangle3D {
             a = out_vertices[0],
             b = out_vertices[i],

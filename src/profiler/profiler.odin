@@ -1,41 +1,41 @@
 package profiler
 
-import "core:simd/x86"
 import "core:fmt"
+import "core:simd/x86"
 
 ProfileAnchor :: struct {
     tsc_elapsed_root: u64,
-    tsc_elapsed: u64,
-    tsc_children: u64,
-    bytes: u64,
-    label: string,
+    tsc_elapsed:      u64,
+    tsc_children:     u64,
+    bytes:            u64,
+    label:            string,
 }
 
 
 Profiler :: struct {
     has_profiling_started: bool,
-    tsc_start: u64,
-    anchors: [1024]ProfileAnchor,
-    anchors_count: u32
+    tsc_start:             u64,
+    anchors:               [1024]ProfileAnchor,
+    anchors_count:         u32,
 }
 
 ProfileBlock :: struct {
-    tsc_start: u64,
+    tsc_start:            u64,
     tsc_old_elapsed_root: u64,
-    anchor_id: u32,
-    parent_id: u32,
-    bytes: u64,
-    label: string,
+    anchor_id:            u32,
+    parent_id:            u32,
+    bytes:                u64,
+    label:                string,
 }
 
 @(private)
 g_parent_id: u32 = 0
 @(private)
-profiler := Profiler{
+profiler := Profiler {
     has_profiling_started = false,
-    tsc_start = 0,
-    anchors = {},
-    anchors_count = 0,
+    tsc_start             = 0,
+    anchors               = {},
+    anchors_count         = 0,
 }
 
 IS_PROFILING :: true
@@ -62,21 +62,21 @@ begin_block :: proc(label: string, idx: ^u32) -> ProfileBlock {
 
     when IS_PROFILING {
         if (idx^ == 0) {
-            profiler.anchors_count += 1;
-            idx^ = profiler.anchors_count;
+            profiler.anchors_count += 1
+            idx^ = profiler.anchors_count
         }
 
-        block := ProfileBlock{
-            label = label,
-            anchor_id = idx^,
-            parent_id = g_parent_id,
-            tsc_old_elapsed_root = profiler.anchors[idx^].tsc_elapsed_root
-        };
+        block := ProfileBlock {
+            label                = label,
+            anchor_id            = idx^,
+            parent_id            = g_parent_id,
+            tsc_old_elapsed_root = profiler.anchors[idx^].tsc_elapsed_root,
+        }
 
-        g_parent_id = idx^;
+        g_parent_id = idx^
 
-        block.tsc_start = x86._rdtsc();
-        return block;
+        block.tsc_start = x86._rdtsc()
+        return block
     }
 
 }
@@ -87,18 +87,18 @@ end_block :: #force_inline proc(block: ^ProfileBlock) {
 
 end_block_with_bytes :: proc(block: ^ProfileBlock, bytes: u64) {
     when IS_PROFILING {
-        tsc_end := x86._rdtsc();
-        elapsed := tsc_end - block.tsc_start;
+        tsc_end := x86._rdtsc()
+        elapsed := tsc_end - block.tsc_start
 
-        g_parent_id = block.parent_id;
+        g_parent_id = block.parent_id
 
-        anchor := &profiler.anchors[block.anchor_id];
-        
-        anchor.bytes = bytes;
-        anchor.tsc_elapsed += elapsed;
-        anchor.tsc_elapsed_root = block.tsc_old_elapsed_root + elapsed;
-        anchor.label = block.label;
-        profiler.anchors[g_parent_id].tsc_children += elapsed;
+        anchor := &profiler.anchors[block.anchor_id]
+
+        anchor.bytes = bytes
+        anchor.tsc_elapsed += elapsed
+        anchor.tsc_elapsed_root = block.tsc_old_elapsed_root + elapsed
+        anchor.label = block.label
+        profiler.anchors[g_parent_id].tsc_children += elapsed
     }
 }
 
@@ -129,43 +129,51 @@ end_profiling :: proc() {
             max_count = profiler.anchors_count + 1
         }
 
-        for i in 0..<max_count {
+        for i in 0 ..< max_count {
             if (profiler.anchors[i].tsc_elapsed > 0) {
 
                 anchor := &profiler.anchors[i]
                 anchor_tsc_elapsed := anchor.tsc_elapsed - anchor.tsc_children
 
-                anchor_cpu_ms: f64 = 1000 * f64(anchor_tsc_elapsed) /
-                    f64(cpu_freq)
-                anchor_portion: f64 = f64(anchor_tsc_elapsed) /
-                    f64(total_tsc_elapsed)
+                anchor_cpu_ms: f64 =
+                    1000 * f64(anchor_tsc_elapsed) / f64(cpu_freq)
+                anchor_portion: f64 =
+                    f64(anchor_tsc_elapsed) / f64(total_tsc_elapsed)
 
-                fmt.printf("\t%s | %.5f ms (%d cycles), %.5f MB/s (%.4f %%", 
+                fmt.printf(
+                    "\t%s | %.5f ms (%d cycles), %.5f MB/s (%.4f %%",
                     anchor.label,
                     anchor_cpu_ms,
                     anchor_tsc_elapsed,
                     f64(anchor.bytes) / anchor_cpu_ms / 1000.0,
-                    100.0 * anchor_portion
-                );
+                    100.0 * anchor_portion,
+                )
 
                 if (anchor.tsc_elapsed_root != anchor_tsc_elapsed) {
-                    fmt.printf(", %.4f %% w/children", 100.0 *
-                        f64(anchor.tsc_elapsed_root) / f64(total_tsc_elapsed));
+                    fmt.printf(
+                        ", %.4f %% w/children",
+                        100.0 *
+                        f64(anchor.tsc_elapsed_root) /
+                        f64(total_tsc_elapsed),
+                    )
                 }
 
-                fmt.print(")\n");
+                fmt.print(")\n")
 
-                unprofiled_cpu_ms -= anchor_cpu_ms;
-                unprofiled_tsc_elapsed -= anchor_tsc_elapsed;
-                unprofiled_portion -= anchor_portion;
+                unprofiled_cpu_ms -= anchor_cpu_ms
+                unprofiled_tsc_elapsed -= anchor_tsc_elapsed
+                unprofiled_portion -= anchor_portion
             }
 
         }
-        fmt.println("\t---------------------");
-        fmt.printfln("\n\tUnprofiled | Elapsed %.5f ms (%d cycles) (%.4f %%)\n",
-            unprofiled_cpu_ms, unprofiled_tsc_elapsed, unprofiled_portion * 100.0);
+        fmt.println("\t---------------------")
+        fmt.printfln(
+            "\n\tUnprofiled | Elapsed %.5f ms (%d cycles) (%.4f %%)\n",
+            unprofiled_cpu_ms,
+            unprofiled_tsc_elapsed,
+            unprofiled_portion * 100.0,
+        )
     }
 
 }
-
 

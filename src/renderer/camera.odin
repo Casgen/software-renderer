@@ -1,46 +1,46 @@
 package renderer
 
-import "core:math/linalg"
-import "core:math"
 import "../constants"
-import "core:fmt"
 import "../core/model"
+import "core:fmt"
+import "core:math"
+import "core:math/linalg"
 
-@private default_up_vec :: linalg.Vector3f32{0, 1, 0}
+@(private)
+default_up_vec :: linalg.Vector3f32{0, 1, 0}
 
 Camera_States :: enum {
-    Move_Fwd = 0,
+    Move_Fwd       = 0,
     Move_Backwards = 1,
-    Move_Left = 2,
-    Move_Right = 3,
-    Move_Up = 4,
-    Move_Down = 5,
+    Move_Left      = 2,
+    Move_Right     = 3,
+    Move_Up        = 4,
+    Move_Down      = 5,
 }
 
 Frustum :: struct {
-    near_vec:   linalg.Vector3f32,
-    far_vec:    linalg.Vector3f32,
-    top_vec:    linalg.Vector3f32,
-    bottom_vec: linalg.Vector3f32,
-    left_vec:   linalg.Vector3f32,
-    right_vec:  linalg.Vector3f32,
-
+    near_vec:    linalg.Vector3f32,
+    far_vec:     linalg.Vector3f32,
+    top_vec:     linalg.Vector3f32,
+    bottom_vec:  linalg.Vector3f32,
+    left_vec:    linalg.Vector3f32,
+    right_vec:   linalg.Vector3f32,
     sides_point: linalg.Vector3f32,
-    near_point: linalg.Vector3f32,
-    far_point: linalg.Vector3f32,
+    near_point:  linalg.Vector3f32,
+    far_point:   linalg.Vector3f32,
 }
 
 Camera :: struct {
-    proj_matrix: linalg.Matrix4x4f32,
-    view_matrix: linalg.Matrix4x4f32,
+    proj_matrix:                        linalg.Matrix4x4f32,
+    view_matrix:                        linalg.Matrix4x4f32,
     eye_pos, fwd_vec, up_vec, side_vec: linalg.Vector3f32,
-    states: bit_set[Camera_States],
-    frustum: Frustum,
-    move_speed: f32,
-    pan_sensitivity: f32,
-    aspect: f32,
-    azimuth, zenith: f32, // Azimuth = hor, yaw | Zenith = vert, pitch
-    z_near, z_far: f32
+    states:                             bit_set[Camera_States],
+    frustum:                            Frustum,
+    move_speed:                         f32,
+    pan_sensitivity:                    f32,
+    aspect:                             f32,
+    azimuth, zenith:                    f32, // Azimuth = hor, yaw | Zenith = vert, pitch
+    z_near, z_far:                      f32,
 }
 
 // TODO: The default up vector can make bugs, when the forward and up vector
@@ -56,34 +56,58 @@ calculate_frustum :: proc(camera: ^Camera) {
     half_h_side: f32 = half_v_side * camera.aspect
 
     far_fwd_vec: linalg.Vector3f32 = camera.fwd_vec * camera.z_far
-    
-    camera.frustum.left_vec = linalg.normalize(linalg.cross(far_fwd_vec -
-        camera.side_vec * half_h_side, -camera.up_vec))
 
-    camera.frustum.right_vec = linalg.normalize(linalg.cross(-camera.up_vec,
-        far_fwd_vec + camera.side_vec * half_h_side))
+    camera.frustum.left_vec = linalg.normalize(
+        linalg.cross(
+            far_fwd_vec - camera.side_vec * half_h_side,
+            -camera.up_vec,
+        ),
+    )
 
-    camera.frustum.bottom_vec = linalg.normalize(linalg.cross(camera.side_vec,
-        far_fwd_vec - (-camera.up_vec) * half_v_side))
+    camera.frustum.right_vec = linalg.normalize(
+        linalg.cross(
+            -camera.up_vec,
+            far_fwd_vec + camera.side_vec * half_h_side,
+        ),
+    )
 
-    camera.frustum.top_vec = linalg.normalize(linalg.cross(far_fwd_vec +
-        (-camera.up_vec) * half_v_side, camera.side_vec))
+    camera.frustum.bottom_vec = linalg.normalize(
+        linalg.cross(
+            camera.side_vec,
+            far_fwd_vec - (-camera.up_vec) * half_v_side,
+        ),
+    )
+
+    camera.frustum.top_vec = linalg.normalize(
+        linalg.cross(
+            far_fwd_vec + (-camera.up_vec) * half_v_side,
+            camera.side_vec,
+        ),
+    )
 
     camera.frustum.sides_point = camera.eye_pos
     camera.frustum.far_point = far_fwd_vec + camera.eye_pos
     camera.frustum.near_point = camera.fwd_vec * camera.z_near + camera.eye_pos
 }
 
-camera_create :: proc (
+camera_create :: proc(
     pos, look_at: linalg.Vector3f32,
-    width, height: u32
+    width, height: u32,
 ) -> Camera {
     camera: Camera
     camera.aspect = f32(width) / f32(height)
-    camera.proj_matrix = linalg.matrix4_perspective_f32(45.0, camera.aspect,
-        0.0001, 100.0)
+    camera.proj_matrix = linalg.matrix4_perspective_f32(
+        45.0,
+        camera.aspect,
+        0.0001,
+        100.0,
+    )
 
-    camera.view_matrix = linalg.matrix4_look_at_f32(pos, look_at, default_up_vec)
+    camera.view_matrix = linalg.matrix4_look_at_f32(
+        pos,
+        look_at,
+        default_up_vec,
+    )
 
     camera.eye_pos = pos
     camera.fwd_vec = linalg.normalize(look_at - pos)
@@ -107,7 +131,7 @@ camera_create :: proc (
 // the sines and cosines or not.
 @(private)
 recalculate_view_matrix :: proc(camera: ^Camera) {
-    camera.fwd_vec = linalg.Vector3f32{
+    camera.fwd_vec = linalg.Vector3f32 {
         math.sin(camera.azimuth) * math.cos(camera.zenith),
         math.sin(camera.zenith),
         math.cos(camera.azimuth) * math.cos(camera.zenith),
@@ -117,20 +141,25 @@ recalculate_view_matrix :: proc(camera: ^Camera) {
     // vector to the forward vector by defining a plane wth forward vector
     // and default_up_vec and based on that calculate the real up vector.
     // Try if it's even going to be even faster though.
-    camera.up_vec = linalg.Vector3f32{ 
+    camera.up_vec = linalg.Vector3f32 {
         math.sin(camera.azimuth) * math.cos(camera.zenith + constants.HALF_PI),
         math.sin(camera.zenith + constants.HALF_PI),
         math.cos(camera.azimuth) * math.cos(camera.zenith + constants.HALF_PI),
     }
 
     camera.side_vec = linalg.cross(camera.up_vec, camera.fwd_vec)
-    camera.view_matrix = linalg.matrix4_look_at_f32(camera.eye_pos,
-        camera.eye_pos + camera.fwd_vec, camera.up_vec) 
+    camera.view_matrix = linalg.matrix4_look_at_f32(
+        camera.eye_pos,
+        camera.eye_pos + camera.fwd_vec,
+        camera.up_vec,
+    )
 }
 
 camera_yaw :: #force_inline proc(camera: ^Camera, step: f32) {
-    camera.azimuth = math.mod(camera.azimuth + step * camera.pan_sensitivity,
-        2 * math.PI)
+    camera.azimuth = math.mod(
+        camera.azimuth + step * camera.pan_sensitivity,
+        2 * math.PI,
+    )
 
     recalculate_view_matrix(camera)
 }
@@ -138,8 +167,11 @@ camera_yaw :: #force_inline proc(camera: ^Camera, step: f32) {
 // FIXME: the `camera.zenith - step` fix is probably a bad hack. Investigate
 // the root cause of why the pitch is inverted.
 camera_pitch :: #force_inline proc(camera: ^Camera, step: f32) {
-    camera.zenith = math.clamp(camera.zenith - step * camera.pan_sensitivity,
-        -constants.HALF_PI, constants.HALF_PI)
+    camera.zenith = math.clamp(
+        camera.zenith - step * camera.pan_sensitivity,
+        -constants.HALF_PI,
+        constants.HALF_PI,
+    )
 
     recalculate_view_matrix(camera)
 }
@@ -199,7 +231,8 @@ camera_update :: proc(camera: ^Camera, delta_time: f32) {
     move_direction :=
         f32(u32(Camera_States.Move_Fwd in camera.states)) * camera.fwd_vec
     move_direction +=
-        f32(u32(Camera_States.Move_Backwards in camera.states)) * -camera.fwd_vec
+        f32(u32(Camera_States.Move_Backwards in camera.states)) *
+        -camera.fwd_vec
 
     move_direction +=
         f32(u32(Camera_States.Move_Left in camera.states)) * camera.side_vec
@@ -219,27 +252,36 @@ camera_update :: proc(camera: ^Camera, delta_time: f32) {
 }
 
 camera_set_resolution :: proc(camera: ^Camera, width, height: u32) {
-    camera.proj_matrix = linalg.matrix4_perspective_f32(45.0,
-        f32(width) / f32(height), 0.0001, 100.0)
+    camera.proj_matrix = linalg.matrix4_perspective_f32(
+        45.0,
+        f32(width) / f32(height),
+        0.0001,
+        100.0,
+    )
 }
 
-@private
-camera_get_side_vec :: #force_inline proc(camera: ^Camera) -> linalg.Vector3f32 {
-    return linalg.Vector3f32{
+@(private)
+camera_get_side_vec :: #force_inline proc(
+    camera: ^Camera,
+) -> linalg.Vector3f32 {
+    return linalg.Vector3f32 {
         camera.view_matrix[0][0],
         camera.view_matrix[0][1],
         camera.view_matrix[0][2],
     }
 }
 
-@private
+@(private)
 set_position :: proc(camera: ^Camera, new_pos: linalg.Vector3f32) {
     // TODO: make the calculation better. We are wasting creating and calculating
     // a new matrix when we could potentially just reuse the current view matrix
     // and set the translation in there
     camera.eye_pos = new_pos
     look_at := new_pos + camera.fwd_vec
-    camera.view_matrix =
-        linalg.matrix4_look_at_f32(new_pos, look_at, camera.up_vec)
+    camera.view_matrix = linalg.matrix4_look_at_f32(
+        new_pos,
+        look_at,
+        camera.up_vec,
+    )
 }
 

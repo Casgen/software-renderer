@@ -1,48 +1,52 @@
 package zmath
 
 import "core:fmt"
-import "core:simd"
 import "core:math"
 import "core:math/fixed"
 import "core:math/linalg"
+import "core:simd"
 
-@require_results
+@(require_results)
 lerp :: proc {
     lerp_f32,
     lerp_2xf32,
     lerp_4xf32,
 }
 
-@require_results
+@(require_results)
 lerp_f32 :: #force_inline proc(a, b, t: f32) -> f32 {
     return simd.fma(1 - t, a, t * b)
 }
 
-@require_results
+@(require_results)
 lerp_2xf32 :: #force_inline proc(a, b: [2]f32, t: f32) -> [2]f32 {
     flipped_t := 1 - t
-    return {simd.fma(flipped_t, a.x, t * b.x), simd.fma(flipped_t, a.y, t * b.y)}
+    return {
+        simd.fma(flipped_t, a.x, t * b.x),
+        simd.fma(flipped_t, a.y, t * b.y),
+    }
 }
 
-@require_results
+@(require_results)
 lerp_4xf32 :: #force_inline proc(a, b: [4]f32, t: f32) -> [4]f32 {
     a_simd: simd.f32x4 = simd.from_array(a)
     b_simd: simd.f32x4 = simd.from_array(b)
-    
+
     t_simd := simd.f32x4{t, t, t, t}
 
     result := simd.fma(
         simd.sub(simd.f32x4{1, 1, 1, 1}, t_simd),
         a_simd,
-        simd.mul(t_simd, b_simd)
+        simd.mul(t_simd, b_simd),
     )
 
     return simd.to_array(result)
 }
 
-@require_results
+@(require_results)
 square :: proc {
-    square_f32, square_u32,
+    square_f32,
+    square_u32,
 }
 
 @(require_results)
@@ -54,5 +58,4 @@ square_u32 :: #force_inline proc(val: u32) -> u32 {
 square_f32 :: #force_inline proc(val: f32) -> f32 {
     return val * val
 }
-
 

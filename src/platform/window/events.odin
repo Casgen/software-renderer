@@ -1,32 +1,32 @@
 package platform
 
-import "../input"
 import "../../core"
+import "../input"
 
 Resize_Window :: struct {
-    image: ^core.Image,
-    width: u32,
-    height: u32
+    image:  ^core.Image,
+    width:  u32,
+    height: u32,
 }
 
 Key_Released :: struct {
     keycode: input.Key_Code,
-    x, y: i32,
+    x, y:    i32,
 }
 
 Key_Pressed :: struct {
     keycode: input.Key_Code,
-    x, y: i32,
+    x, y:    i32,
 }
 
 MouseBtn_Pressed :: struct {
     button: input.MouseBtn_Code,
-    x, y: i32,
+    x, y:   i32,
 }
 
 MouseBtn_Released :: struct {
     button: input.MouseBtn_Code,
-    x, y: i32,
+    x, y:   i32,
 }
 
 Pointer_Moved :: struct {

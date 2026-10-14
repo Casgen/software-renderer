@@ -2,18 +2,26 @@ package model
 
 import "core:math"
 import "core:simd"
-import "core:sys/posix"
 
 OutCode :: u8
 
-@private INSIDE : u8 : 0b0000
-@private LEFT : u8 :   0b0001
-@private RIGHT : u8 :  0b0010
-@private BOTTOM : u8 : 0b0100
-@private TOP : u8 :    0b1000
+@(private)
+INSIDE: u8 : 0b0000
+@(private)
+LEFT: u8 : 0b0001
+@(private)
+RIGHT: u8 : 0b0010
+@(private)
+BOTTOM: u8 : 0b0100
+@(private)
+TOP: u8 : 0b1000
 
-Line4D :: struct { a, b: Vertex4D, }
-Line2D :: struct { a, b: Vertex2D, }
+Line4D :: struct {
+    a, b: Vertex4D,
+}
+Line2D :: struct {
+    a, b: Vertex2D,
+}
 
 // Based on Liang-Barsky line clipping algorithms
 // Returns:
@@ -21,9 +29,9 @@ Line2D :: struct { a, b: Vertex2D, }
 // TODO: Maybe a fixed point precision or integer based clipping for performance?
 line_liang_barsky_clip_3d :: proc(
     x_min, x_max, y_min, y_max: f32,
-    line: ^Line4D
+    line: ^Line4D,
 ) -> bool {
-    
+
     p1: f32 = -(line.b.position.x - line.a.position.x)
     p2: f32 = -p1
     p3: f32 = -(line.b.position.y - line.a.position.y)
@@ -34,10 +42,12 @@ line_liang_barsky_clip_3d :: proc(
     q3: f32 = line.a.position.y - y_min
     q4: f32 = y_max - line.a.position.y
 
-    
+
     // TODO: Is there ever a high chance that this will be hit? Probably
     // not...
-    if (p1 == 0 && q1 < 0) || (p2 == 0 && q2 < 0) || (p3 == 0 && q3 < 0) ||
+    if (p1 == 0 && q1 < 0) ||
+       (p2 == 0 && q2 < 0) ||
+       (p3 == 0 && q3 < 0) ||
        (p4 == 0 && q4 < 0) {
         return false
     }
@@ -53,16 +63,16 @@ line_liang_barsky_clip_3d :: proc(
         r2 := q2 / p2
 
         if (p1 < 0) {
-            entry_params[entry_index] = r1;
+            entry_params[entry_index] = r1
             entry_index += 1
 
-            exit_params[exit_index] = r2;
+            exit_params[exit_index] = r2
             exit_index += 1
         } else {
-            entry_params[entry_index] = r2;
+            entry_params[entry_index] = r2
             entry_index += 1
 
-            exit_params[exit_index] = r1;
+            exit_params[exit_index] = r1
             exit_index += 1
         }
     }
@@ -72,16 +82,16 @@ line_liang_barsky_clip_3d :: proc(
         r4 := q4 / p4
 
         if (p3 < 0) {
-            entry_params[entry_index] = r3;
+            entry_params[entry_index] = r3
             entry_index += 1
 
-            exit_params[exit_index] = r4;
+            exit_params[exit_index] = r4
             exit_index += 1
         } else {
-            entry_params[entry_index] = r4;
+            entry_params[entry_index] = r4
             entry_index += 1
 
-            exit_params[exit_index] = r3;
+            exit_params[exit_index] = r3
             exit_index += 1
         }
     }
@@ -93,27 +103,49 @@ line_liang_barsky_clip_3d :: proc(
 
     z_diff := line.b.position.z - line.a.position.z
 
-    line.a.position.x = math.clamp(simd.fma(t1, line.b.position.x - line.a.position.x, line.a.position.x), x_min, x_max)
-    line.a.position.y = math.clamp(simd.fma(t1, line.b.position.y - line.a.position.y, line.a.position.y), y_min, y_max)
+    line.a.position.x = math.clamp(
+        simd.fma(t1, line.b.position.x - line.a.position.x, line.a.position.x),
+        x_min,
+        x_max,
+    )
+    line.a.position.y = math.clamp(
+        simd.fma(t1, line.b.position.y - line.a.position.y, line.a.position.y),
+        y_min,
+        y_max,
+    )
     line.a.position.z = simd.fma(t1, z_diff, line.a.position.z)
 
-    line.b.position.x = math.clamp(simd.fma(t2, line.b.position.x - line.a.position.x, line.a.position.x), x_min, x_max)
-    line.b.position.y = math.clamp(simd.fma(t2, line.b.position.y - line.a.position.y, line.a.position.y), y_min, y_max)
+    line.b.position.x = math.clamp(
+        simd.fma(t2, line.b.position.x - line.a.position.x, line.a.position.x),
+        x_min,
+        x_max,
+    )
+    line.b.position.y = math.clamp(
+        simd.fma(t2, line.b.position.y - line.a.position.y, line.a.position.y),
+        y_min,
+        y_max,
+    )
     line.b.position.z = simd.fma(t2, z_diff, line.a.position.z)
 
-    if line.a.position.x < -1.0 || line.a.position.y < -1.0  || line.a.position.x > 1.0 || line.a.position.y > 1.0 ||
-       line.b.position.x < -1.0 || line.b.position.y < -1.0  || line.b.position.x > 1.0 || line.b.position.y > 1.0 {
-        posix.raise(posix.Signal.SIGTRAP)
+    if line.a.position.x < -1.0 ||
+       line.a.position.y < -1.0 ||
+       line.a.position.x > 1.0 ||
+       line.a.position.y > 1.0 ||
+       line.b.position.x < -1.0 ||
+       line.b.position.y < -1.0 ||
+       line.b.position.x > 1.0 ||
+       line.b.position.y > 1.0 {
+        panic("Failed to clip a 3D line!")
     }
 
     return true
 }
-    
+
 line_liang_barsky_clip_2d :: proc(
     x_min, x_max, y_min, y_max: f32,
-    line: ^Line2D
+    line: ^Line2D,
 ) -> bool {
-    
+
     p1: f32 = -(line.b.position.x - line.a.position.x)
     p2: f32 = -p1
     p3: f32 = -(line.b.position.y - line.a.position.y)
@@ -124,8 +156,10 @@ line_liang_barsky_clip_2d :: proc(
     q3: f32 = line.a.position.y - y_min
     q4: f32 = y_max - line.a.position.y
 
-    
-    if (p1 == 0 && q1 < 0) || (p2 == 0 && q2 < 0) || (p3 == 0 && q3 < 0) ||
+
+    if (p1 == 0 && q1 < 0) ||
+       (p2 == 0 && q2 < 0) ||
+       (p3 == 0 && q3 < 0) ||
        (p4 == 0 && q4 < 0) {
         return false
     }
@@ -141,16 +175,16 @@ line_liang_barsky_clip_2d :: proc(
         r2 := q2 / p2
 
         if (p1 < 0) {
-            entry_params[entry_index] = r1;
+            entry_params[entry_index] = r1
             entry_index += 1
 
-            exit_params[exit_index] = r2;
+            exit_params[exit_index] = r2
             exit_index += 1
         } else {
-            entry_params[entry_index] = r2;
+            entry_params[entry_index] = r2
             entry_index += 1
 
-            exit_params[exit_index] = r1;
+            exit_params[exit_index] = r1
             exit_index += 1
         }
     }
@@ -160,16 +194,16 @@ line_liang_barsky_clip_2d :: proc(
         r4 := q4 / p4
 
         if (p1 < 0) {
-            entry_params[entry_index] = r3;
+            entry_params[entry_index] = r3
             entry_index += 1
 
-            exit_params[exit_index] = r4;
+            exit_params[exit_index] = r4
             exit_index += 1
         } else {
-            entry_params[entry_index] = r4;
+            entry_params[entry_index] = r4
             entry_index += 1
 
-            exit_params[exit_index] = r3;
+            exit_params[exit_index] = r3
             exit_index += 1
         }
     }
