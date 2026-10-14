@@ -12,7 +12,7 @@ OutCode :: u8
 @private BOTTOM : u8 : 0b0100
 @private TOP : u8 :    0b1000
 
-Line3D :: struct { a, b: Vertex4D, }
+Line4D :: struct { a, b: Vertex4D, }
 Line2D :: struct { a, b: Vertex2D, }
 
 // Based on Liang-Barsky line clipping algorithms
@@ -21,7 +21,7 @@ Line2D :: struct { a, b: Vertex2D, }
 // TODO: Maybe a fixed point precision or integer based clipping for performance?
 line_liang_barsky_clip_3d :: proc(
     x_min, x_max, y_min, y_max: f32,
-    line: ^Line3D
+    line: ^Line4D
 ) -> bool {
     
     p1: f32 = -(line.b.position.x - line.a.position.x)

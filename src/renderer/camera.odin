@@ -4,6 +4,7 @@ import "core:math/linalg"
 import "core:math"
 import "../constants"
 import "core:fmt"
+import "../core/model"
 
 @private default_up_vec :: linalg.Vector3f32{0, 1, 0}
 
@@ -16,35 +17,79 @@ Camera_States :: enum {
     Move_Down = 5,
 }
 
+Frustum :: struct {
+    near_vec:   linalg.Vector3f32,
+    far_vec:    linalg.Vector3f32,
+    top_vec:    linalg.Vector3f32,
+    bottom_vec: linalg.Vector3f32,
+    left_vec:   linalg.Vector3f32,
+    right_vec:  linalg.Vector3f32,
+
+    sides_point: linalg.Vector3f32,
+    near_point: linalg.Vector3f32,
+    far_point: linalg.Vector3f32,
+}
+
 Camera :: struct {
-    model_matrix: linalg.Matrix4x4f32,
     proj_matrix: linalg.Matrix4x4f32,
     view_matrix: linalg.Matrix4x4f32,
     eye_pos, fwd_vec, up_vec, side_vec: linalg.Vector3f32,
     states: bit_set[Camera_States],
+    frustum: Frustum,
     move_speed: f32,
     pan_sensitivity: f32,
-    // Azimuth = horizontal, yaw | Zenith = vertical, pitch
-    azimuth, zenith: f32,
+    aspect: f32,
+    azimuth, zenith: f32, // Azimuth = hor, yaw | Zenith = vert, pitch
+    z_near, z_far: f32
 }
 
 // TODO: The default up vector can make bugs, when the forward and up vector
 // have the same direction.
+
+// TODO: Make this more efficient.
+calculate_frustum :: proc(camera: ^Camera) {
+
+    camera.frustum.near_vec = -camera.fwd_vec
+    camera.frustum.far_vec = camera.fwd_vec
+
+    half_v_side: f32 = camera.z_far * math.tan_f32(45.0 * 0.5)
+    half_h_side: f32 = half_v_side * camera.aspect
+
+    far_fwd_vec: linalg.Vector3f32 = camera.fwd_vec * camera.z_far
+    
+    camera.frustum.left_vec = linalg.normalize(linalg.cross(far_fwd_vec -
+        camera.side_vec * half_h_side, -camera.up_vec))
+
+    camera.frustum.right_vec = linalg.normalize(linalg.cross(-camera.up_vec,
+        far_fwd_vec + camera.side_vec * half_h_side))
+
+    camera.frustum.bottom_vec = linalg.normalize(linalg.cross(camera.side_vec,
+        far_fwd_vec - (-camera.up_vec) * half_v_side))
+
+    camera.frustum.top_vec = linalg.normalize(linalg.cross(far_fwd_vec +
+        (-camera.up_vec) * half_v_side, camera.side_vec))
+
+    camera.frustum.sides_point = camera.eye_pos
+    camera.frustum.far_point = far_fwd_vec + camera.eye_pos
+    camera.frustum.near_point = camera.fwd_vec * camera.z_near + camera.eye_pos
+}
 
 camera_create :: proc (
     pos, look_at: linalg.Vector3f32,
     width, height: u32
 ) -> Camera {
     camera: Camera
-    camera.proj_matrix = linalg.matrix4_perspective_f32(45.0,
-        f32(width) / f32(height), 0.0001, 100.0)
+    camera.aspect = f32(width) / f32(height)
+    camera.proj_matrix = linalg.matrix4_perspective_f32(45.0, camera.aspect,
+        0.0001, 100.0)
 
     camera.view_matrix = linalg.matrix4_look_at_f32(pos, look_at, default_up_vec)
-    camera.model_matrix = linalg.MATRIX4F32_IDENTITY
 
     camera.eye_pos = pos
     camera.fwd_vec = linalg.normalize(look_at - pos)
     camera.up_vec = default_up_vec
+    // Expecting that the side_vec is normalized already due to default_up_vec
+    // being normalized
     camera.side_vec = linalg.cross(default_up_vec, camera.fwd_vec)
 
     camera.states = {}
@@ -131,6 +176,22 @@ camera_set_move_right :: #force_inline proc(camera: ^Camera, state: bool) {
     }
 }
 
+camera_set_move_up :: #force_inline proc(camera: ^Camera, state: bool) {
+    if state {
+        camera.states += {Camera_States.Move_Up}
+    } else {
+        camera.states -= {Camera_States.Move_Up}
+    }
+}
+
+camera_set_move_down :: #force_inline proc(camera: ^Camera, state: bool) {
+    if state {
+        camera.states += {Camera_States.Move_Down}
+    } else {
+        camera.states -= {Camera_States.Move_Down}
+    }
+}
+
 camera_update :: proc(camera: ^Camera, delta_time: f32) {
     // Camera has no states set -> not moving. Just return early
     if card(camera.states) == 0 do return
@@ -145,11 +206,14 @@ camera_update :: proc(camera: ^Camera, delta_time: f32) {
     move_direction +=
         f32(u32(Camera_States.Move_Right in camera.states)) * -camera.side_vec
 
+    move_direction +=
+        f32(u32(Camera_States.Move_Up in camera.states)) * camera.up_vec
+    move_direction +=
+        f32(u32(Camera_States.Move_Down in camera.states)) * -camera.up_vec
+
     move_direction = linalg.normalize(move_direction)
     step := delta_time * camera.move_speed
     move_direction *= step
-
-    fmt.println(move_direction)
 
     set_position(camera, move_direction + camera.eye_pos)
 }

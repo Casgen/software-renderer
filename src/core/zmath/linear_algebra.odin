@@ -1,5 +1,6 @@
 package zmath
 
+import "core:fmt"
 import "core:simd"
 import "core:math"
 import "core:math/fixed"
