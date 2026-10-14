@@ -366,44 +366,48 @@ draw :: proc(renderer: ^Renderer, triangles: []model.Triangle2D) {
 // Clips a triangle into a polygon (made up of multiple triangles) and
 // Triangulates it. It is expected that the points are ordered by their
 // Y-coordinate from top to bottom (a.y > b.y > c.y)!
-clip_triangle :: proc(a, b, c: model.Point4D) -> [dynamic]model.Triangle3D {
 
-    in_vertices := [dynamic]model.Point4D{a, b, c}
-    out_vertices := [dynamic]model.Point4D{}
+clip_triangle :: proc(a, b, c: ^model.Vertex4D) -> []model.Triangle3D {
+
+    in_vertices := [dynamic]model.Vertex4D{a^, b^, c^}
+    defer delete(in_vertices)
+
+    out_vertices := [dynamic]model.Vertex4D{}
+    defer delete(out_vertices)
 
     // Left plane
     for i in 0 ..< len(in_vertices) {
-        p1 := in_vertices[(i + len(in_vertices) - 1) % len(in_vertices)] // TODO: Switch out indices?
-        p2 := in_vertices[i]
+        p1 := &in_vertices[(i + len(in_vertices) - 1) % len(in_vertices)] // TODO: Switch out indices?
+        p2 := &in_vertices[i]
 
         result: u8 = 0
-        result |= u8(p1.x >= -p1.w)
-        result |= u8(p2.x >= -p2.w) << 1
+        result |= u8(p1.position.x >= -p1.position.w)
+        result |= u8(p2.position.x >= -p2.position.w) << 1
 
         switch result {
         case 0: // Is Outside (do nothing)
         case 1:
             // Start is inside and End is outside
-            d_a := p1.w + p1.x
-            d_b := p2.w + p2.x
+            d_a := p1.position.w + p1.position.x
+            d_b := p2.position.w + p2.position.x
 
             t := d_a / (d_a - d_b)
-            new_point := zmath.lerp_4xf32(p1, p2, t)
+            new_point := model.vertex_4d_lerp(p1, p2, t)
 
             append(&out_vertices, new_point)
         case 2:
             // Start is outside and End is inside
-            d_a := p1.w + p1.x
-            d_b := p2.w + p2.x
+            d_a := p1.position.w + p1.position.x
+            d_b := p2.position.w + p2.position.x
 
             t := d_a / (d_a - d_b)
-            new_point := zmath.lerp_4xf32(p1, p2, t)
+            new_point := model.vertex_4d_lerp(p1, p2, t)
 
             append(&out_vertices, new_point)
-            append(&out_vertices, p2)
+            append(&out_vertices, p2^)
         case 3:
-            // Both point are Inside
-            append(&out_vertices, p2)
+            // Both points are Inside
+            append(&out_vertices, p2^)
         case:
             panic("Unreachable switch case!")
         }
@@ -418,37 +422,37 @@ clip_triangle :: proc(a, b, c: model.Point4D) -> [dynamic]model.Triangle3D {
 
     // Right plane
     for i in 0 ..< len(in_vertices) {
-        p1 := in_vertices[(i + len(in_vertices) - 1) % len(in_vertices)]
-        p2 := in_vertices[i]
+        p1 := &in_vertices[(i + len(in_vertices) - 1) % len(in_vertices)]
+        p2 := &in_vertices[i]
 
         result: u8 = 0
-        result |= u8(p1.x <= p1.w)
-        result |= u8(p2.x <= p2.w) << 1
+        result |= u8(p1.position.x <= p1.position.w)
+        result |= u8(p2.position.x <= p2.position.w) << 1
 
         switch result {
         case 0: // Is Outside (do nothing)
         case 1:
             // Start is inside and End is outside
-            d_a := p1.w - p1.x
-            d_b := p2.w - p2.x
+            d_a := p1.position.w - p1.position.x
+            d_b := p2.position.w - p2.position.x
 
             t := d_a / (d_a - d_b)
-            new_point := zmath.lerp_4xf32(p1, p2, t)
+            new_point := model.vertex_4d_lerp(p1, p2, t)
 
             append(&out_vertices, new_point)
         case 2:
             // Start is outside and End is inside
-            d_a := p1.w - p1.x
-            d_b := p2.w - p2.x
+            d_a := p1.position.w - p1.position.x
+            d_b := p2.position.w - p2.position.x
 
             t := d_a / (d_a - d_b)
-            new_point := zmath.lerp_4xf32(p1, p2, t)
+            new_point := model.vertex_4d_lerp(p1, p2, t)
 
             append(&out_vertices, new_point)
-            append(&out_vertices, p2)
+            append(&out_vertices, p2^)
         case 3:
             // Both point are Inside
-            append(&out_vertices, p2)
+            append(&out_vertices, p2^)
         case:
             panic("Unreachable switch case!")
         }
@@ -463,39 +467,39 @@ clip_triangle :: proc(a, b, c: model.Point4D) -> [dynamic]model.Triangle3D {
 
     // Top plane
     for i in 0 ..< len(in_vertices) {
-        p1 := in_vertices[(i + len(in_vertices) - 1) % len(in_vertices)]
-        p2 := in_vertices[i]
+        p1 := &in_vertices[(i + len(in_vertices) - 1) % len(in_vertices)]
+        p2 := &in_vertices[i]
 
         result: u8 = 0
-        result |= u8(p1.y <= p1.w)
-        result |= u8(p2.y <= p2.w) << 1
+        result |= u8(p1.position.y <= p1.position.w)
+        result |= u8(p2.position.y <= p2.position.w) << 1
 
         switch result {
         case 0: // Is Outside (do nothing)
         case 1:
             // Start is inside and End is outside
-            d_a: f32 = p1.w - p1.y
-            d_b: f32 = p2.w - p2.y
+            d_a: f32 = p1.position.w - p1.position.y
+            d_b: f32 = p2.position.w - p2.position.y
 
             t: f32 = d_a / (d_a - d_b)
-            new_point := zmath.lerp_4xf32(p1, p2, t)
+            new_point := model.vertex_4d_lerp(p1, p2, t)
 
             append(&out_vertices, new_point)
             break
         // FIXME: Vertices are of course not calculated right.
         case 2:
             // Start is outside and End is inside
-            dist_a: f32 = p1.w - p1.y // this section makes the debugger confused???
-            dist_b: f32 = p2.w - p2.y
+            dist_a: f32 = p1.position.w - p1.position.y // this section makes the debugger confused???
+            dist_b: f32 = p2.position.w - p2.position.y
 
             t: f32 = dist_a / (dist_a - dist_b)
-            new_point := zmath.lerp_4xf32(p1, p2, t)
+            new_point := model.vertex_4d_lerp(p1, p2, t)
 
             append(&out_vertices, new_point)
-            append(&out_vertices, p2)
+            append(&out_vertices, p2^)
         case 3:
             // Both point are Inside
-            append(&out_vertices, p2)
+            append(&out_vertices, p2^)
         case:
             panic("Unreachable switch case!")
         }
@@ -511,46 +515,57 @@ clip_triangle :: proc(a, b, c: model.Point4D) -> [dynamic]model.Triangle3D {
 
     // Bottom plane
     for i in 0 ..< len(in_vertices) {
-        p1 := in_vertices[(i + len(in_vertices) - 1) % len(in_vertices)]
-        p2 := in_vertices[i]
+        p1 := &in_vertices[(i + len(in_vertices) - 1) % len(in_vertices)]
+        p2 := &in_vertices[i]
 
         result: u8 = 0
-        result |= u8(p1.y >= -p1.w)
-        result |= u8(p2.y >= -p2.w) << 1
+        result |= u8(p1.position.y >= -p1.position.w)
+        result |= u8(p2.position.y >= -p2.position.w) << 1
 
         switch result {
         case 0: // Is Outside (do nothing)
         case 1:
             // Start is inside and End is outside
-            d_a := p1.w - p1.y
-            d_b := p2.w - p2.y
+            d_a := p1.position.w + p1.position.y
+            d_b := p2.position.w + p2.position.y
 
             t := d_a / (d_a - d_b)
-            new_point := zmath.lerp_4xf32(p1, p2, t)
+            new_point := model.vertex_4d_lerp(p1, p2, t)
 
             append(&out_vertices, new_point)
         case 2:
             // Start is outside and End is inside
-            d_a := p1.w - p1.y
-            d_b := p2.w - p2.y
+            d_a := p1.position.w + p1.position.y
+            d_b := p2.position.w + p2.position.y
 
             t := d_a / (d_a - d_b)
-            new_point := zmath.lerp_4xf32(p1, p2, t)
+            new_point := model.vertex_4d_lerp(p1, p2, t)
 
             append(&out_vertices, new_point)
-            append(&out_vertices, p2)
+            append(&out_vertices, p2^)
         case 3:
             // Both point are Inside
-            append(&out_vertices, p2)
+            append(&out_vertices, p2^)
         case:
             panic("Unreachable switch case!")
         }
     }
 
-    delete(in_vertices)
-    delete(out_vertices)
+    // Constructs triangles from new vertices by a triangle fan.
+    new_triangles := make([]model.Triangle3D, len(out_vertices) - 2)
 
-    return [dynamic]model.Triangle3D{}
+    push_index: u32 = 0
+    for i in 1 ..<(len(out_vertices) - 1) {
+        new_triangles[push_index] = model.Triangle3D {
+            a = out_vertices[0],
+            b = out_vertices[i],
+            c = out_vertices[i + 1],
+        }
+
+        push_index += 1
+    }
+
+    return new_triangles
 }
 
 draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
@@ -576,162 +591,163 @@ draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
             return
         }
 
-        a := &tri.a
-        b := &tri.b
-        c := &tri.c
+        clip_triangles := clip_triangle(&tri.a, &tri.b, &tri.c)
+        defer delete(clip_triangles)
 
-        // Sort vertices from bottom to top C-B-A (After the Y-flipping, the A
-        // vertex is at the top (A-B-C)
-        if (c.position.y > b.position.y) {
-            temp := c
-            c = b
-            b = temp
-        }
+        for &clip_tri in clip_triangles {
 
-        if (b.position.y > a.position.y) {
-            temp := b
-            b = a
-            a = temp
-        }
+            a := &clip_tri.a
+            b := &clip_tri.b
+            c := &clip_tri.c
 
-        if (c.position.y > b.position.y) {
-            temp := c
-            c = b
-            b = temp
-        }
-
-        fmt.println(b.position)
-
-        triangles := clip_triangle(a.position, b.position, c.position)
-        defer delete(triangles)
-
-        a.position /= a.position.w
-        b.position /= b.position.w
-        c.position /= c.position.w
-
-
-        width: f32 = f32(renderer.image.width)
-        height: f32 = f32(renderer.image.height)
-
-
-        trans_a: [2]f32 = {
-            math.floor((a.position.x + 1.0) * 0.5 * width),
-            math.floor((1.0 - a.position.y) * 0.5 * height),
-        }
-        trans_b: [2]f32 = {
-            math.floor((b.position.x + 1.0) * 0.5 * width),
-            math.floor((1.0 - b.position.y) * 0.5 * height),
-        }
-        trans_c: [2]f32 = {
-            math.floor((c.position.x + 1.0) * 0.5 * width),
-            math.floor((1.0 - c.position.y) * 0.5 * height),
-        }
-
-
-        // Check whether the triangle has counter clock-wise or clock-wise
-        // winding.
-        ac_vec := trans_a - trans_c
-        bc_vec := trans_b - trans_c
-        is_cw_winding := -ac_vec.x * bc_vec.y + bc_vec.x * ac_vec.y < 0
-
-        // FIXME: Cutoff the coordinates to fit within the framebuffer.
-        // Would do access out of bounds!
-        y_min := i32(math.max(trans_a.y, 0))
-        y_max := i32(math.min(trans_b.y, height - 1))
-
-        inverted_t: f32 = is_cw_winding ? 1.0 : 0.0
-
-        for y := y_min; y < y_max; y += 1 {
-            diff := (f32(y) - trans_a.y)
-            t_ab := diff / (trans_b.y - trans_a.y) // T between A-B
-            t_ac := diff / (trans_c.y - trans_a.y) // T between A-C
-
-            color_ab := zmath.lerp_4xf32(a.color, b.color, t_ab)
-            color_ac := zmath.lerp_4xf32(a.color, c.color, t_ac)
-
-            x1 := i32(zmath.lerp_f32(trans_a.x, trans_b.x, t_ab))
-            x2 := i32(zmath.lerp_f32(trans_a.x, trans_c.x, t_ac))
-
-            z1 := zmath.lerp_f32(a.position.z, b.position.z, t_ab)
-            z2 := zmath.lerp_f32(a.position.z, c.position.z, t_ac)
-
-            // TODO: can this be done outisde of this for loop? Investigate
-            if x1 > x2 {
-                temp := x1
-                x1 = x2
-                x2 = temp
+            // Sort vertices from bottom to top C-B-A (After the Y-flipping, the A
+            // vertex is at the top (A-B-C)
+            if (c.position.y > b.position.y) {
+                temp := c
+                c = b
+                b = temp
             }
 
-            x_min := math.max(x1, 0)
-            x_max := math.min(x2, i32(renderer.image.width) - 1)
-
-            row := y * i32(renderer.image.width)
-
-            // TODO: Probably could be SIMDed
-            for x := x_min; x < x_max; x += 1 {
-                t := math.abs(inverted_t - (f32(x - x1) / f32(x2 - x1)))
-                i := row + x
-                z := zmath.lerp_f32(z1, z2, t)
-
-                if depth_buffer_write(
-                    &renderer.depth_buffer,
-                    u32(x),
-                    u32(y),
-                    z,
-                ) {
-                    color_abc := zmath.lerp_4xf32(color_ab, color_ac, t)
-                    result_pixel := color.to_u32(color_abc)
-                    renderer.image.buffer[i] = result_pixel
-                }
-            }
-        }
-
-        y_min = i32(math.max(trans_b.y, 0))
-        y_max = i32(math.min(trans_c.y, height - 1))
-
-        // Render the bottom half of the triangle
-        for y := y_min; y < y_max; y += 1 {
-            t_bc := (f32(y) - trans_b.y) / (trans_c.y - trans_b.y) // T between B-C
-            t_ac := (f32(y) - trans_a.y) / (trans_c.y - trans_a.y) // T between A-C
-
-            color_bc := zmath.lerp_4xf32(b.color, c.color, t_bc)
-            color_ac := zmath.lerp_4xf32(a.color, c.color, t_ac)
-
-            x1 := i32(zmath.lerp_f32(trans_b.x, trans_c.x, t_bc))
-            x2 := i32(zmath.lerp_f32(trans_a.x, trans_c.x, t_ac))
-
-            z1 := zmath.lerp_f32(b.position.z, c.position.z, t_bc)
-            z2 := zmath.lerp_f32(a.position.z, c.position.z, t_ac)
-
-            if x1 > x2 {
-                temp := x1
-                x1 = x2
-                x2 = temp
+            if (b.position.y > a.position.y) {
+                temp := b
+                b = a
+                a = temp
             }
 
-            x_min := math.max(x1, 0)
-            x_max := math.min(x2, i32(renderer.image.width) - 1)
+            if (c.position.y > b.position.y) {
+                temp := c
+                c = b
+                b = temp
+            }
 
-            row := y * i32(renderer.image.width)
+            a.position /= a.position.w
+            b.position /= b.position.w
+            c.position /= c.position.w
 
-            // TODO: Probably could be SIMDed
-            for x := x_min; x < x_max; x += 1 {
-                t := math.abs(inverted_t - (f32(x - x1) / f32(x2 - x1)))
-                i := row + x
 
-                z := zmath.lerp_f32(z1, z2, t)
+            width: f32 = f32(renderer.image.width)
+            height: f32 = f32(renderer.image.height)
 
-                if depth_buffer_write(
-                    &renderer.depth_buffer,
-                    u32(x),
-                    u32(y),
-                    z,
-                ) {
-                    color_abc := zmath.lerp_4xf32(color_bc, color_ac, t)
-                    result_pixel := color.to_u32(color_abc)
-                    renderer.image.buffer[row + x] = result_pixel
+
+            trans_a: [2]f32 = {
+                math.floor((a.position.x + 1.0) * 0.5 * width),
+                math.floor((1.0 - a.position.y) * 0.5 * height),
+            }
+            trans_b: [2]f32 = {
+                math.floor((b.position.x + 1.0) * 0.5 * width),
+                math.floor((1.0 - b.position.y) * 0.5 * height),
+            }
+            trans_c: [2]f32 = {
+                math.floor((c.position.x + 1.0) * 0.5 * width),
+                math.floor((1.0 - c.position.y) * 0.5 * height),
+            }
+
+
+            // Check whether the triangle has counter clock-wise or clock-wise
+            // winding.
+            ac_vec := trans_a - trans_c
+            bc_vec := trans_b - trans_c
+            is_cw_winding := -ac_vec.x * bc_vec.y + bc_vec.x * ac_vec.y < 0
+
+            // FIXME: Cutoff the coordinates to fit within the framebuffer.
+            // Would do access out of bounds!
+            y_min := i32(math.max(trans_a.y, 0))
+            y_max := i32(math.min(trans_b.y, height - 1))
+
+            inverted_t: f32 = is_cw_winding ? 1.0 : 0.0
+
+            for y := y_min; y < y_max; y += 1 {
+                diff := (f32(y) - trans_a.y)
+                t_ab := diff / (trans_b.y - trans_a.y) // T between A-B
+                t_ac := diff / (trans_c.y - trans_a.y) // T between A-C
+
+                color_ab := zmath.lerp(a.color, b.color, t_ab)
+                color_ac := zmath.lerp(a.color, c.color, t_ac)
+
+                x1 := i32(zmath.lerp(trans_a.x, trans_b.x, t_ab))
+                x2 := i32(zmath.lerp(trans_a.x, trans_c.x, t_ac))
+
+                z1 := zmath.lerp(a.position.z, b.position.z, t_ab)
+                z2 := zmath.lerp(a.position.z, c.position.z, t_ac)
+
+                // TODO: can this be done outisde of this for loop? Investigate
+                if x1 > x2 {
+                    temp := x1
+                    x1 = x2
+                    x2 = temp
                 }
 
+                x_min := math.max(x1, 0)
+                x_max := math.min(x2, i32(renderer.image.width) - 1)
+
+                row := y * i32(renderer.image.width)
+
+                // TODO: Probably could be SIMDed
+                for x := x_min; x < x_max; x += 1 {
+                    t := math.abs(inverted_t - (f32(x - x1) / f32(x2 - x1)))
+                    i := row + x
+                    z := zmath.lerp(z1, z2, t)
+
+                    if depth_buffer_write(
+                        &renderer.depth_buffer,
+                        u32(x),
+                        u32(y),
+                        z,
+                    ) {
+                        color_abc := zmath.lerp(color_ab, color_ac, t)
+                        result_pixel := color.to_u32(color_abc)
+                        renderer.image.buffer[i] = result_pixel
+                    }
+                }
+            }
+
+            y_min = i32(math.max(trans_b.y, 0))
+            y_max = i32(math.min(trans_c.y, height - 1))
+
+            // Render the bottom half of the triangle
+            for y := y_min; y < y_max; y += 1 {
+                t_bc := (f32(y) - trans_b.y) / (trans_c.y - trans_b.y) // T between B-C
+                t_ac := (f32(y) - trans_a.y) / (trans_c.y - trans_a.y) // T between A-C
+
+                color_bc := zmath.lerp(b.color, c.color, t_bc)
+                color_ac := zmath.lerp(a.color, c.color, t_ac)
+
+                x1 := i32(zmath.lerp(trans_b.x, trans_c.x, t_bc))
+                x2 := i32(zmath.lerp(trans_a.x, trans_c.x, t_ac))
+
+                z1 := zmath.lerp(b.position.z, c.position.z, t_bc)
+                z2 := zmath.lerp(a.position.z, c.position.z, t_ac)
+
+                if x1 > x2 {
+                    temp := x1
+                    x1 = x2
+                    x2 = temp
+                }
+
+                x_min := math.max(x1, 0)
+                x_max := math.min(x2, i32(renderer.image.width) - 1)
+
+                row := y * i32(renderer.image.width)
+
+                // TODO: Probably could be SIMDed
+                for x := x_min; x < x_max; x += 1 {
+                    t := math.abs(inverted_t - (f32(x - x1) / f32(x2 - x1)))
+                    i := row + x
+
+                    z := zmath.lerp(z1, z2, t)
+
+                    if depth_buffer_write(
+                        &renderer.depth_buffer,
+                        u32(x),
+                        u32(y),
+                        z,
+                    ) {
+                        color_abc := zmath.lerp_4xf32(color_bc, color_ac, t)
+                        result_pixel := color.to_u32(color_abc)
+                        renderer.image.buffer[row + x] = result_pixel
+                    }
+
+                }
             }
         }
     }
