@@ -53,8 +53,9 @@ to_color4xf32 :: proc(color: Color4xU8) -> Color4xF32 {
     }
 }
 
-// Maps a 4-component color defined in u8 (0- 255)
+// Maps a 4-component color defined in u8 (0 - 255)
 // to 4-component color defined in u16 (0 - 65535)
+// TODO: Could have been done a bit better
 map_color4xU8_to_color4xU16 :: proc(color: Color4xU8) -> Color4xU16 {
     t_color: simd.f32x4 = {
         f32(constants.U8_MAX) / f32(color.r),

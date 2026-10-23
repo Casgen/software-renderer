@@ -478,21 +478,20 @@ clip_triangle :: proc(a, b, c: ^model.Vertex4D) -> []model.Triangle3D {
         case 0: // Is Outside (do nothing)
         case 1:
             // Start is inside and End is outside
-            d_a: f32 = p1.position.w - p1.position.y
-            d_b: f32 = p2.position.w - p2.position.y
+            d_a := p1.position.w - p1.position.y
+            d_b := p2.position.w - p2.position.y
 
-            t: f32 = d_a / (d_a - d_b)
+            t := d_a / (d_a - d_b)
             new_point := model.vertex_4d_lerp(p1, p2, t)
 
             append(&out_vertices, new_point)
             break
-        // FIXME: Vertices are of course not calculated right.
         case 2:
             // Start is outside and End is inside
-            dist_a: f32 = p1.position.w - p1.position.y // this section makes the debugger confused???
-            dist_b: f32 = p2.position.w - p2.position.y
+            d_a := p1.position.w - p1.position.y
+            d_b := p2.position.w - p2.position.y
 
-            t: f32 = dist_a / (dist_a - dist_b)
+            t := d_a / (d_a - d_b)
             new_point := model.vertex_4d_lerp(p1, p2, t)
 
             append(&out_vertices, new_point)
@@ -551,6 +550,8 @@ clip_triangle :: proc(a, b, c: ^model.Vertex4D) -> []model.Triangle3D {
         }
     }
 
+    if (len(out_vertices) < 3) do return {}
+
     // Constructs triangles from new vertices by a triangle fan.
     new_triangles := make([]model.Triangle3D, len(out_vertices) - 2)
 
@@ -568,9 +569,40 @@ clip_triangle :: proc(a, b, c: ^model.Vertex4D) -> []model.Triangle3D {
     return new_triangles
 }
 
+// Draws a point on a screen.
+// @param img - ptr to an image struct
+// @param x - x-coord in range < -1, 1 )
+// @param y - y-coord in range < -1, 1 )
+// @param size - size of the point in pixels
+// @param color - color of the point
+// TODO: Finish this!!
+draw_point :: proc(
+    rndr: ^Renderer,
+    x, y: u32,
+    size: u32,
+    color: color.Color3xU8,
+    z: f32 = 0.0,
+) {
+    x_max := math.min(x + size, rndr.image.width)
+    x_min := math.max(x - size, 0)
+
+    y_max := math.min(y + size, rndr.image.height)
+    y_min := math.max(y - size, 0)
+
+    for y_t := y_min; y_t < y_max; y_t += 1 {
+        for x_t := x_min; x_t < x_max; x_t += 1 {
+            if depth_buffer_write(&rndr.depth_buffer, x, y, z) {
+                core.image_write_rgb(rndr.image, x_t, y_t, color)
+            }
+        }
+    }
+
+}
+
 draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
     for i in 0 ..< len(triangles) {
         tri := triangles[i]
+
         tri.a.position =
             renderer.camera.proj_matrix *
             renderer.camera.view_matrix *
@@ -591,6 +623,24 @@ draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
             return
         }
 
+        a := &tri.a
+        b := &tri.b
+        c := &tri.c
+
+        // NOTE: Is swap needed here? probably only for predictability and debug
+        // reasons.
+        if (c.position.y > b.position.y) {
+            b, c = c, b
+        }
+
+        if (b.position.y > a.position.y) {
+            a, b = b, a
+        }
+
+        if (c.position.y > b.position.y) {
+            b, c = c, b
+        }
+
         clip_triangles := clip_triangle(&tri.a, &tri.b, &tri.c)
         defer delete(clip_triangles)
 
@@ -600,29 +650,24 @@ draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
             b := &clip_tri.b
             c := &clip_tri.c
 
-            // Sort vertices from bottom to top C-B-A (After the Y-flipping, the A
-            // vertex is at the top (A-B-C)
-            if (c.position.y > b.position.y) {
-                temp := c
-                c = b
-                b = temp
-            }
-
-            if (b.position.y > a.position.y) {
-                temp := b
-                b = a
-                a = temp
-            }
-
-            if (c.position.y > b.position.y) {
-                temp := c
-                c = b
-                b = temp
-            }
-
             a.position /= a.position.w
             b.position /= b.position.w
             c.position /= c.position.w
+
+            // Sort vertices from bottom to top C-B-A (After the Y-flipping, the A
+            // vertex is at the top (A-B-C).
+            // WARN: Has to be done after dehomogenisation!
+            if (c.position.y > b.position.y) {
+                b, c = c, b
+            }
+
+            if (b.position.y > a.position.y) {
+                a, b = b, a
+            }
+
+            if (c.position.y > b.position.y) {
+                b, c = c, b
+            }
 
 
             width: f32 = f32(renderer.image.width)
@@ -641,6 +686,28 @@ draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
                 math.floor((c.position.x + 1.0) * 0.5 * width),
                 math.floor((1.0 - c.position.y) * 0.5 * height),
             }
+
+            draw_point(
+                renderer,
+                u32(trans_a.x),
+                u32(trans_a.y),
+                10,
+                color.Color3xU8{0, 125, 111},
+            )
+            draw_point(
+                renderer,
+                u32(trans_b.x),
+                u32(trans_b.y),
+                10,
+                color.Color3xU8{0, 125, 111},
+            )
+            draw_point(
+                renderer,
+                u32(trans_c.x),
+                u32(trans_c.y),
+                10,
+                color.Color3xU8{0, 125, 111},
+            )
 
 
             // Check whether the triangle has counter clock-wise or clock-wise
@@ -777,9 +844,6 @@ draw_line_2d :: proc(renderer: ^Renderer, lines: []model.Line2D) {
         dx := trans_b.x - trans_a.x
         dy := trans_b.y - trans_a.y
 
-        x_inc, y_inc: f32
-        max: u32
-
         step: f32 = math.abs(dx) >= math.abs(dy) ? math.abs(dx) : math.abs(dy)
 
         dx = dx / step
@@ -820,16 +884,16 @@ draw_line_3d :: proc(renderer: ^Renderer, lines: []model.Line4D) {
             renderer.camera.view_matrix *
             line.b.position
 
-        // TODO: Do fast clipping.
-        if (line.a.position.x < -line.a.position.w ||
-               line.a.position.x > line.a.position.w) &&
-           (line.b.position.x < -line.b.position.w ||
-                   line.b.position.x > line.b.position.w) {
-            return
-        }
-
         line.a.position /= line.a.position.w
         line.b.position /= line.b.position.w
+
+        
+        switch model.cohen_sutherland_line_compute_overlap(-1.0, 1.0, -1.0, 1.0, line) {
+        case .Outside: return
+        case .Partially_Outside:
+            if !model.line_liang_barsky_clip_3d(-1.0, 1.0, -1.0, 1.0, line) do return
+        case .Inside:
+        }
 
         // TODO: Maybe this is unecessary to do after every line.
         // Precompute this during init
@@ -838,13 +902,11 @@ draw_line_3d :: proc(renderer: ^Renderer, lines: []model.Line4D) {
             f32(renderer.image.height),
         }
 
-        if !model.line_liang_barsky_clip_3d(-1.0, 1.0, -1.0, 1.0, line) do return
-
-
         trans_a := [2]f32 {
             math.floor((line.a.position.x + 1.0) * 0.5 * (resolution.x - 1)),
             math.floor((1.0 - line.a.position.y) * 0.5 * (resolution.y - 1)),
         }
+
         trans_b := [2]f32 {
             math.floor((line.b.position.x + 1.0) * 0.5 * (resolution.x - 1)),
             math.floor((1.0 - line.b.position.y) * 0.5 * (resolution.y - 1)),
@@ -853,9 +915,6 @@ draw_line_3d :: proc(renderer: ^Renderer, lines: []model.Line4D) {
         dx := trans_b.x - trans_a.x
         dy := trans_b.y - trans_a.y
         dz := line.b.position.z - line.a.position.z
-
-        x_inc, y_inc: f32
-        max: u32
 
         step: f32 = math.max(math.abs(dx), math.abs(dy), math.abs(dz))
 

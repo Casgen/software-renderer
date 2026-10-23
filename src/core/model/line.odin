@@ -3,18 +3,10 @@ package model
 import "core:math"
 import "core:simd"
 
+import "../model"
+
 OutCode :: u8
 
-@(private)
-INSIDE: u8 : 0b0000
-@(private)
-LEFT: u8 : 0b0001
-@(private)
-RIGHT: u8 : 0b0010
-@(private)
-BOTTOM: u8 : 0b0100
-@(private)
-TOP: u8 : 0b1000
 
 Line4D :: struct {
     a, b: Vertex4D,
@@ -220,4 +212,58 @@ line_liang_barsky_clip_2d :: proc(
     line.b.position.y = simd.fma(line.b.position.y, p4, t2)
 
     return true
+}
+
+
+CohenSutherlandResut :: enum {
+    Outside,
+    Partially_Outside,
+    Inside,
+}
+
+cohen_sutherland_line_compute_overlap :: proc(
+    x_min, x_max: f32,
+    y_min, y_max: f32,
+    line: ^Line4D,
+) -> CohenSutherlandResut {
+    INSIDE: u8 : 0b0000
+    LEFT: u8 : 0b0001
+    RIGHT: u8 : 0b0010
+    BOTTOM: u8 : 0b0100
+    TOP: u8 : 0b1000
+
+    // NOTE: compute code for point A
+    code_a := INSIDE
+
+    if line.a.position.x < x_min {
+        code_a |= LEFT
+    } else if line.a.position.x > x_max {
+        code_a |= RIGHT
+    }
+
+    if line.a.position.y < y_min {
+        code_a |= BOTTOM
+    } else if line.a.position.y > y_max {
+        code_a |= TOP
+    }
+
+    // NOTE: compute code for point B
+    code_b := INSIDE
+
+    if line.b.position.x < x_min {
+        code_b |= LEFT
+    } else if line.b.position.x > x_max {
+        code_b |= RIGHT
+    }
+
+    if line.b.position.y < y_min {
+        code_b |= BOTTOM
+    } else if line.b.position.y > y_max {
+        code_b |= TOP
+    }
+
+    if code_b | code_a == 0 do return .Inside
+    if bool(code_a & code_b) do return .Outside
+
+    return .Partially_Outside
 }
