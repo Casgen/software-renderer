@@ -92,7 +92,9 @@ estimate_cpu_freq :: proc() -> u64 {
     cpu_end := x86._rdtsc()
     cpu_elapsed := cpu_end - cpu_start
 
-    if elapsed != 0 do return OS_TIMER_FREQ * cpu_elapsed / elapsed
+    if elapsed != 0 {
+        return OS_TIMER_FREQ * cpu_elapsed / elapsed
+    } 
 
     return 0
 }

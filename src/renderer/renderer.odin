@@ -12,7 +12,6 @@ import "../core"
 import "../core/model"
 import "../core/zmath"
 import "../core/zmath/color"
-import "../platform/input"
 import "../platform/window"
 
 
@@ -168,7 +167,11 @@ random_vertex_2d :: proc() -> model.Vertex2D {
     x := rand.float32() * 2.0 - 1.0
     y := rand.float32() * 2.0 - 1.0
 
-    return model.Vertex2D{linalg.Vector2f32{x, y}, color.rand_color4xf32()}
+    return model.Vertex2D {
+        linalg.Vector2f32{x, y},
+        {0.0, 0.0},
+        color.rand_color4xf32(),
+    }
 }
 
 random_vertex_4d :: proc() -> model.Vertex4D {
@@ -180,6 +183,7 @@ random_vertex_4d :: proc() -> model.Vertex4D {
     return model.Vertex4D {
         linalg.Vector4f32{x, y, z, 1.0},
         color.rand_color4xf32(),
+        {0.0, 0.0, 0.0},
     }
 }
 
@@ -228,9 +232,17 @@ generate_random_3d_triangles :: proc(count: u32) -> []model.Triangle3D {
 
     for i in 0 ..< len(triangles) {
         triangles[i] = model.Triangle3D {
-            a = model.Vertex4D{{0, 0.5, 0, 1}, {1, 0, 0, 1}},
-            b = model.Vertex4D{{0.5, -0.5, 0, 1}, {0, 1, 0, 1}},
-            c = model.Vertex4D{{-0.5, -0.5, 0, 1}, {0, 0, 1, 1}},
+            a = model.Vertex4D{{0, 0.5, 0, 1}, {1, 0, 0, 1}, {0.0, 1.0, 0.0}},
+            b = model.Vertex4D {
+                {0.5, -0.5, 0, 1},
+                {0, 1, 0, 1},
+                {1.0, 0.0, 0.0},
+            },
+            c = model.Vertex4D {
+                {-0.5, -0.5, 0, 1},
+                {0, 0, 1, 1},
+                {0.0, 0.0, 0.0},
+            },
         }
     }
 
@@ -263,22 +275,22 @@ draw :: proc(renderer: ^Renderer, triangles: []model.Triangle2D) {
         }
 
 
-        width: f32 = f32(renderer.image.width)
-        height: f32 = f32(renderer.image.height)
+        width: f32 = f32(renderer.image.width - 1)
+        height: f32 = f32(renderer.image.height - 1)
 
         // Transform vertices to project them onto the screen
         // TODO: Might have to deal with odd value width and height...
         trans_a: [2]f32 = {
-            math.floor_f32((a.position.x + 1.0) * 0.5 * width),
-            math.floor_f32((a.position.y + 1.0) * 0.5 * height),
+            math.floor((a.position.x + 1.0) * 0.5 * width),
+            math.floor((1.0 - a.position.y) * 0.5 * height),
         }
         trans_b: [2]f32 = {
-            math.floor_f32((b.position.x + 1.0) * 0.5 * width),
-            math.floor_f32((b.position.y + 1.0) * 0.5 * height),
+            math.floor((b.position.x + 1.0) * 0.5 * width),
+            math.floor((1.0 - b.position.y) * 0.5 * height),
         }
         trans_c: [2]f32 = {
-            math.floor_f32((c.position.x + 1.0) * 0.5 * width),
-            math.floor_f32((c.position.y + 1.0) * 0.5 * height),
+            math.floor((c.position.x + 1.0) * 0.5 * width),
+            math.floor((1.0 - c.position.y) * 0.5 * height),
         }
 
 
@@ -550,7 +562,9 @@ clip_triangle :: proc(a, b, c: ^model.Vertex4D) -> []model.Triangle3D {
         }
     }
 
-    if (len(out_vertices) < 3) do return {}
+    if (len(out_vertices) < 3) {
+        return {}
+    }
 
     // Constructs triangles from new vertices by a triangle fan.
     new_triangles := make([]model.Triangle3D, len(out_vertices) - 2)
@@ -646,69 +660,46 @@ draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
 
         for &clip_tri in clip_triangles {
 
-            a := &clip_tri.a
-            b := &clip_tri.b
-            c := &clip_tri.c
+            clip_a := &clip_tri.a
+            clip_b := &clip_tri.b
+            clip_c := &clip_tri.c
 
-            a.position /= a.position.w
-            b.position /= b.position.w
-            c.position /= c.position.w
+            clip_a.position /= clip_a.position.w
+            clip_b.position /= clip_b.position.w
+            clip_c.position /= clip_c.position.w
 
             // Sort vertices from bottom to top C-B-A (After the Y-flipping, the A
             // vertex is at the top (A-B-C).
             // WARN: Has to be done after dehomogenisation!
-            if (c.position.y > b.position.y) {
-                b, c = c, b
+            if (clip_c.position.y > clip_b.position.y) {
+                clip_b, clip_c = clip_c, clip_b
             }
 
-            if (b.position.y > a.position.y) {
-                a, b = b, a
+            if (clip_b.position.y > clip_a.position.y) {
+                clip_a, clip_b = clip_b, clip_a
             }
 
-            if (c.position.y > b.position.y) {
-                b, c = c, b
+            if (clip_c.position.y > clip_b.position.y) {
+                clip_b, clip_c = clip_c, clip_b
             }
 
 
-            width: f32 = f32(renderer.image.width)
-            height: f32 = f32(renderer.image.height)
+            width: f32 = f32(renderer.image.width - 1)
+            height: f32 = f32(renderer.image.height - 1)
 
 
             trans_a: [2]f32 = {
-                math.floor((a.position.x + 1.0) * 0.5 * width),
-                math.floor((1.0 - a.position.y) * 0.5 * height),
+                math.floor((clip_a.position.x + 1.0) * 0.5 * width),
+                math.floor((1.0 - clip_a.position.y) * 0.5 * height),
             }
             trans_b: [2]f32 = {
-                math.floor((b.position.x + 1.0) * 0.5 * width),
-                math.floor((1.0 - b.position.y) * 0.5 * height),
+                math.floor((clip_b.position.x + 1.0) * 0.5 * width),
+                math.floor((1.0 - clip_b.position.y) * 0.5 * height),
             }
             trans_c: [2]f32 = {
-                math.floor((c.position.x + 1.0) * 0.5 * width),
-                math.floor((1.0 - c.position.y) * 0.5 * height),
+                math.floor((clip_c.position.x + 1.0) * 0.5 * width),
+                math.floor((1.0 - clip_c.position.y) * 0.5 * height),
             }
-
-            draw_point(
-                renderer,
-                u32(trans_a.x),
-                u32(trans_a.y),
-                10,
-                color.Color3xU8{0, 125, 111},
-            )
-            draw_point(
-                renderer,
-                u32(trans_b.x),
-                u32(trans_b.y),
-                10,
-                color.Color3xU8{0, 125, 111},
-            )
-            draw_point(
-                renderer,
-                u32(trans_c.x),
-                u32(trans_c.y),
-                10,
-                color.Color3xU8{0, 125, 111},
-            )
-
 
             // Check whether the triangle has counter clock-wise or clock-wise
             // winding.
@@ -728,20 +719,18 @@ draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
                 t_ab := diff / (trans_b.y - trans_a.y) // T between A-B
                 t_ac := diff / (trans_c.y - trans_a.y) // T between A-C
 
-                color_ab := zmath.lerp(a.color, b.color, t_ab)
-                color_ac := zmath.lerp(a.color, c.color, t_ac)
+                color_ab := zmath.lerp(clip_a.color, clip_b.color, t_ab)
+                color_ac := zmath.lerp(clip_a.color, clip_c.color, t_ac)
 
                 x1 := i32(zmath.lerp(trans_a.x, trans_b.x, t_ab))
                 x2 := i32(zmath.lerp(trans_a.x, trans_c.x, t_ac))
 
-                z1 := zmath.lerp(a.position.z, b.position.z, t_ab)
-                z2 := zmath.lerp(a.position.z, c.position.z, t_ac)
+                z1 := zmath.lerp(clip_a.position.z, clip_b.position.z, t_ab)
+                z2 := zmath.lerp(clip_a.position.z, clip_c.position.z, t_ac)
 
                 // TODO: can this be done outisde of this for loop? Investigate
                 if x1 > x2 {
-                    temp := x1
-                    x1 = x2
-                    x2 = temp
+                    x1, x2 = x2, x1
                 }
 
                 x_min := math.max(x1, 0)
@@ -776,19 +765,17 @@ draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
                 t_bc := (f32(y) - trans_b.y) / (trans_c.y - trans_b.y) // T between B-C
                 t_ac := (f32(y) - trans_a.y) / (trans_c.y - trans_a.y) // T between A-C
 
-                color_bc := zmath.lerp(b.color, c.color, t_bc)
-                color_ac := zmath.lerp(a.color, c.color, t_ac)
+                color_bc := zmath.lerp(clip_b.color, clip_c.color, t_bc)
+                color_ac := zmath.lerp(clip_a.color, clip_c.color, t_ac)
 
                 x1 := i32(zmath.lerp(trans_b.x, trans_c.x, t_bc))
                 x2 := i32(zmath.lerp(trans_a.x, trans_c.x, t_ac))
 
-                z1 := zmath.lerp(b.position.z, c.position.z, t_bc)
-                z2 := zmath.lerp(a.position.z, c.position.z, t_ac)
+                z1 := zmath.lerp(clip_b.position.z, clip_c.position.z, t_bc)
+                z2 := zmath.lerp(clip_a.position.z, clip_c.position.z, t_ac)
 
                 if x1 > x2 {
-                    temp := x1
-                    x1 = x2
-                    x2 = temp
+                    x1, x2 = x2, x1
                 }
 
                 x_min := math.max(x1, 0)
@@ -799,8 +786,6 @@ draw_3d :: proc(renderer: ^Renderer, triangles: []model.Triangle3D) {
                 // TODO: Probably could be SIMDed
                 for x := x_min; x < x_max; x += 1 {
                     t := math.abs(inverted_t - (f32(x - x1) / f32(x2 - x1)))
-                    i := row + x
-
                     z := zmath.lerp(z1, z2, t)
 
                     if depth_buffer_write(
@@ -859,7 +844,7 @@ draw_line_2d :: proc(renderer: ^Renderer, lines: []model.Line2D) {
         rgba: color.Color4xF32 = line.b.color
 
         // TODO: fix crashing when lines go out of bounds
-        for i := 0; i <= int(step); i += 1 {
+        for j := 0; j <= int(step); j += 1 {
             x += dx
             y += dy
 
@@ -887,11 +872,20 @@ draw_line_3d :: proc(renderer: ^Renderer, lines: []model.Line4D) {
         line.a.position /= line.a.position.w
         line.b.position /= line.b.position.w
 
-        
-        switch model.cohen_sutherland_line_compute_overlap(-1.0, 1.0, -1.0, 1.0, line) {
-        case .Outside: return
+
+        switch model.cohen_sutherland_line_compute_overlap(
+            -1.0,
+            1.0,
+            -1.0,
+            1.0,
+            line,
+        ) {
+        case .Outside:
+            return
         case .Partially_Outside:
-            if !model.line_liang_barsky_clip_3d(-1.0, 1.0, -1.0, 1.0, line) do return
+            if !model.line_liang_barsky_clip_3d(-1.0, 1.0, -1.0, 1.0, line) {
+                return
+            }
         case .Inside:
         }
 
@@ -931,7 +925,7 @@ draw_line_3d :: proc(renderer: ^Renderer, lines: []model.Line4D) {
         z := line.a.position.z
         rgba: color.Color4xF32 = line.b.color
 
-        for i := 0; i < int(step); i += 1 {
+        for j := 0; j < int(step); j += 1 {
             x += dx
             y += dy
             z += dz

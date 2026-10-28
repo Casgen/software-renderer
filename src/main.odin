@@ -1,13 +1,10 @@
 package main
 
 import "core:time"
-import "vendor:x11/xlib"
 
-import "core"
 import "core/model"
 import "core/zmath/color"
 import "platform/window"
-import "profiler"
 import "renderer"
 
 SYNC_DURATION: time.Duration : time.Duration(16_666_666)

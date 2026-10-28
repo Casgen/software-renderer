@@ -3,8 +3,6 @@ package model
 import "core:math"
 import "core:simd"
 
-import "../model"
-
 OutCode :: u8
 
 
@@ -91,7 +89,9 @@ line_liang_barsky_clip_3d :: proc(
     t1 := math.max(entry_params[0], entry_params[1], entry_params[2])
     t2 := math.min(exit_params[0], exit_params[1], exit_params[2])
 
-    if t1 > t2 do return false
+    if t1 > t2 {
+        return false
+    }
 
     z_diff := line.b.position.z - line.a.position.z
 
@@ -203,7 +203,9 @@ line_liang_barsky_clip_2d :: proc(
     t1 := math.max(entry_params[0], entry_params[1], entry_params[2])
     t2 := math.min(exit_params[0], exit_params[1], exit_params[2])
 
-    if t1 > t2 do return false
+    if t1 > t2 {
+        return false
+    }
 
     line.a.position.x = simd.fma(line.a.position.x, p2, t1)
     line.a.position.y = simd.fma(line.a.position.y, p4, t1)
@@ -262,8 +264,13 @@ cohen_sutherland_line_compute_overlap :: proc(
         code_b |= TOP
     }
 
-    if code_b | code_a == 0 do return .Inside
-    if bool(code_a & code_b) do return .Outside
+    if code_b | code_a == 0 {
+        return .Inside
+    }
+
+    if bool(code_a & code_b) {
+        return .Outside
+    }
 
     return .Partially_Outside
 }

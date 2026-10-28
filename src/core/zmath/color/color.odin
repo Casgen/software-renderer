@@ -1,6 +1,5 @@
 package color
 
-import "core:math/linalg"
 import "core:math/rand"
 import "core:simd"
 

@@ -40,9 +40,6 @@ error_handler :: proc "c" (
     display: ^xlib.Display,
     error_event: ^xlib.XErrorEvent,
 ) -> i32 {
-
-    status := cast(xlib.Status)error_event.error_code
-
     buffer: [256]u8 = {}
 
     xlib.GetErrorText(
@@ -64,7 +61,9 @@ poll_event :: #force_inline proc(window: ^Window, out_event: ^Event) -> bool {
     out_event^ = Null{}
     is_pending := xlib.Pending(window.display) > 0
 
-    if !is_pending do return false
+    if !is_pending {
+        return false
+    }
 
     x_event: xlib.XEvent
     xlib.NextEvent(window.display, &x_event)
@@ -169,7 +168,9 @@ clear :: #force_inline proc(win: ^Window, clear_color: u32 = 0) {
 }
 
 clear_image :: #force_inline proc(image: ^core.Image, clear_color: u32 = 0) {
-    for i in 0 ..< len(image.buffer) do image.buffer[i] = clear_color
+    for i in 0 ..< len(image.buffer) {
+        image.buffer[i] = clear_color
+    }
 }
 
 @(private)
@@ -291,7 +292,6 @@ create :: proc(win_params: WindowCreateParams) -> (Window, bool) {
         "Failed to retrieve Xlib GC Values!",
     )
 
-    pixel_count := win_params.width * win_params.height
     img_buffer := malloc_buffer(u32, u64(win_params.width * win_params.height))
 
     image := xlib.CreateImage(

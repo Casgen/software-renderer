@@ -1,8 +1,6 @@
 package renderer
 
 import "../constants"
-import "../core/model"
-import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 
@@ -226,7 +224,9 @@ camera_set_move_down :: #force_inline proc(camera: ^Camera, state: bool) {
 
 camera_update :: proc(camera: ^Camera, delta_time: f32) {
     // Camera has no states set -> not moving. Just return early
-    if card(camera.states) == 0 do return
+    if card(camera.states) == 0 {
+        return
+    }
 
     move_direction :=
         f32(u32(Camera_States.Move_Fwd in camera.states)) * camera.fwd_vec

@@ -32,7 +32,7 @@ image_write_rgb_u8 :: proc(
         "Failed to write into image! Out of bounds!",
     )
 
-    ptr := transmute([^]u8)&image.buffer[index]
+    ptr := cast([^]u8)&image.buffer[index]
     ptr[0] = r
     ptr[1] = g
     ptr[2] = b
@@ -43,7 +43,7 @@ image_write_rgb_3xu8 :: proc(
     image: ^Image,
     x: u32,
     y: u32,
-    colors: [3]u8
+    colors: [3]u8,
 ) {
     index := int(y * image.width + x)
     assert(
@@ -51,7 +51,7 @@ image_write_rgb_3xu8 :: proc(
         "Failed to write into image! Out of bounds!",
     )
 
-    ptr := transmute([^]u8)&image.buffer[index]
+    ptr := cast([^]u8)&image.buffer[index]
     ptr[0] = colors[0]
     ptr[1] = colors[1]
     ptr[2] = colors[2]
@@ -61,7 +61,7 @@ image_write_rgb_3xu8 :: proc(
 
 image_write_rgba :: proc {
     image_write_rgba_u32,
-    image_write_rgba_u8
+    image_write_rgba_u8,
 }
 
 image_write_rgba_u8 :: proc(image: ^Image, x, y: u32, r, g, b, a: u8, bounds_check := true) {
@@ -73,7 +73,7 @@ image_write_rgba_u8 :: proc(image: ^Image, x, y: u32, r, g, b, a: u8, bounds_che
         )
     }
 
-    #no_bounds_check ptr := transmute([^]u8)&image.buffer[index]
+    #no_bounds_check ptr := cast([^]u8)&image.buffer[index]
     ptr[0] = r
     ptr[1] = g
     ptr[2] = b
